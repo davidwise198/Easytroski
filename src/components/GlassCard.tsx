@@ -29,18 +29,15 @@ export default function GlassCard({children}: Props) {
 const styles = StyleSheet.create({
 
   card:{
+    width:"100%",
     backgroundColor: COLORS.glass,
-
     borderRadius: RADIUS.large,
-
-    padding:20,
-
+    padding:30,
     borderWidth:1,
-
     borderColor:COLORS.glassBorder,
-
+    alignItems: "center",
     ...SHADOW,
-
   }
 
 });
+
