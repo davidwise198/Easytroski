@@ -10,9 +10,18 @@ import AppText from "../src/components/ui/AppText";
 import FeatureChip from "../src/components/ui/FeatureChip";
 import RoleActionCard from "../src/components/ui/RoleActionCard";
 import { COLORS, SPACING } from "../src/theme";
+import { useAuth } from "../src/contexts/AuthContext";
 
 export default function Index() {
   const insets = useSafeAreaInsets();
+  const { user, userRole, loading } = useAuth();
+
+  // Redirect logged-in users to their dashboard
+  useEffect(() => {
+    if (!loading && user && userRole) {
+      router.replace(userRole === "driver" ? "/driver-dashboard" : "/passenger-dashboard");
+    }
+  }, [loading, user, userRole]);
   const entrance = useRef(new Animated.Value(0)).current;
   const illustrationFloat = useRef(new Animated.Value(0)).current;
 

@@ -7,33 +7,45 @@ import AppCard from "../src/components/ui/AppCard";
 import AppText from "../src/components/ui/AppText";
 import PrimaryButton from "../src/components/ui/PrimaryButton";
 import SectionTitle from "../src/components/ui/SectionTitle";
+import AuthGate from "../src/components/AuthGate";
+import { useAuth } from "../src/contexts/AuthContext";
 
 import { COLORS, SPACING } from "../src/theme";
-import { logoutUser } from "../src/services/auth";
 
 export default function PassengerDashboardScreen() {
+  const { signOut } = useAuth();
+
   const handleLogout = async () => {
-    await logoutUser();
-    router.replace("/auth/login");
+    await signOut();
+    // AuthGate will redirect to login once auth state clears
   };
 
   return (
-    <AppBackground>
-      <View style={styles.container}>
-        <SectionTitle>Passenger Dashboard</SectionTitle>
+    <AuthGate allowedRoles={["passenger"]}>
+      <AppBackground>
+        <View style={styles.container}>
+          <SectionTitle>Passenger Dashboard</SectionTitle>
 
-        <AppCard style={styles.card}>
-          <AppText variant="heading" style={styles.title}>
-            Welcome back
-          </AppText>
-          <AppText variant="body" style={styles.description}>
-            Your passenger account is ready. You can browse routes and book rides here.
-          </AppText>
-        </AppCard>
+          <AppCard style={styles.card}>
+            <AppText variant="heading" style={styles.title}>
+              Welcome back
+            </AppText>
+            <AppText variant="body" style={styles.description}>
+              Your passenger account is ready. You can browse routes and book rides here.
+            </AppText>
+          </AppCard>
 
-        <PrimaryButton title="Sign Out" onPress={handleLogout} variant="outline" />
-      </View>
-    </AppBackground>
+          <PrimaryButton
+            title="Browse active routes"
+            onPress={() => router.push("/routes")}
+            variant="primary"
+            style={styles.browseButton}
+          />
+
+          <PrimaryButton title="Sign Out" onPress={handleLogout} variant="outline" />
+        </View>
+      </AppBackground>
+    </AuthGate>
   );
 }
 
@@ -45,8 +57,11 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.xxl,
   },
   card: {
-    marginBottom: SPACING.xl,
+    marginBottom: SPACING.md,
     alignItems: "center",
+  },
+  browseButton: {
+    marginBottom: SPACING.md,
   },
   title: {
     marginBottom: SPACING.sm,

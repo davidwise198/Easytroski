@@ -1,0 +1,25 @@
+{
+  "routes": [
+    {
+      "id": "accra-madina",
+      "origin": "Accra",
+      "destination": "Madina",
+      "stops": ["37 Station", "Legon", "Atomic"],
+      "active": true
+    },
+    {
+      "id": "kaneshie-circle",
+      "origin": "Kaneshie",
+      "destination": "Circle",
+      "stops": ["Odorkor", "Lapaz", "Abossey Okai"],
+      "active": true
+    },
+    {
+      "id": "tema-accra",
+      "origin": "Tema",
+      "destination": "Accra",
+      "stops": ["Community 1", "Nungua", "Teshie"],
+      "active": true
+    }
+  ]
+}
