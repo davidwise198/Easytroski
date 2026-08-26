@@ -19,7 +19,13 @@ export default function Index() {
   // Redirect logged-in users to their dashboard
   useEffect(() => {
     if (!loading && user && userRole) {
-      router.replace(userRole === "driver" ? "/driver-dashboard" : "/passenger-dashboard");
+      if (userRole === "admin") {
+        router.replace("/admin-routes");
+      } else if (userRole === "driver") {
+        router.replace("/driver-dashboard");
+      } else {
+        router.replace("/passenger-dashboard");
+      }
     }
   }, [loading, user, userRole]);
   const entrance = useRef(new Animated.Value(0)).current;

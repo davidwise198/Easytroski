@@ -2,6 +2,9 @@ rules_version = '2';
 
 service cloud.firestore {
   match /databases/{database}/documents {
+
+    // ─── Helper functions ──────────────────────────────────────────────
+
     function signedIn() {
       return request.auth != null;
     }
@@ -15,54 +18,171 @@ service cloud.firestore {
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin";
     }
 
+    /** Ensure a string field exists and is not empty. */
+    function fieldExists(field) {
+      return request.resource.data.keys().hasAll([field])
+        && request.resource.data[field] is string
+        && request.resource.data[field] != "";
+    }
+
+    /** Reject documents larger than ~1 MiB (Firestore max is 1 MiB). */
+    function reasonableSize() {
+      return request.resource.data.size() < 1048576;
+    }
+
+    /** On update, ensure the user isn't changing the owner/creator field. */
+    function ownerFieldUnchanged(fieldName) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([fieldName]);
+    }
+
+    // ─── Users ─────────────────────────────────────────────────────────
+
     match /users/{userId} {
-      allow create, read, update: if isOwner(userId) || isAdmin();
+      // Users can read and update their own profile; admins can read/write any.
+      allow create: if isOwner(userId)
+        && fieldExists("name")
+        && fieldExists("email")
+        && reasonableSize();
+      allow read: if isOwner(userId) || isAdmin();
+      allow update: if isOwner(userId) || isAdmin();
       allow delete: if false;
     }
+
+    // ─── Routes (admin-managed) ────────────────────────────────────────
 
     match /routes/{routeId} {
       allow read: if signedIn();
-      allow create, update: if isAdmin();
-      allow delete: if false;
+      allow create: if isAdmin()
+        && fieldExists("origin")
+        && fieldExists("destination")
+        && reasonableSize();
+      allow update: if isAdmin()
+        && reasonableSize();
+      allow delete: if isAdmin();
     }
+
+    // ─── Vehicles ──────────────────────────────────────────────────────
 
     match /vehicles/{vehicleId} {
       allow read: if signedIn();
-      allow create, update: if isAdmin()
-        || (signedIn() && request.resource.data.driverId == request.auth.uid);
+      // Only admin can create vehicles (prevents any user from registering a vehicle).
+      allow create: if isAdmin()
+        && fieldExists("numberPlate")
+        && fieldExists("capacity")
+        && reasonableSize();
+      // Driver can update their own vehicle (e.g. set active status).
+      // Admin can update any vehicle.
+      allow update: if isAdmin()
+        || (signedIn()
+          && resource.data.driverId == request.auth.uid
+          && ownerFieldUnchanged("driverId")
+          && ownerFieldUnchanged("numberPlate"));
       allow delete: if isAdmin();
     }
 
+    // ─── Driver profiles ───────────────────────────────────────────────
+
     match /drivers/{driverId} {
+      // Read: signed-in users can read driver profiles.
       allow read: if signedIn();
-      allow create, update: if isOwner(driverId) || isAdmin();
+
+      // Create: only the driver themselves can create their own profile.
+      allow create: if isOwner(driverId)
+        && fieldExists("userId")
+        && request.resource.data.userId == driverId
+        && reasonableSize();
+
+      // Update: driver can update their own profile; admin can update any.
+      allow update: if isAdmin()
+        || (isOwner(driverId)
+          && ownerFieldUnchanged("userId")
+          && ownerFieldUnchanged("licenseNumber")
+          && reasonableSize());
+
+      allow delete: if isAdmin();
+    }
+
+    // ─── Passenger profiles ────────────────────────────────────────────
+
+    match /passengers/{passengerId} {
+      allow create: if isOwner(passengerId)
+        && reasonableSize();
+      allow read: if isOwner(passengerId) || isAdmin();
+      allow update: if isOwner(passengerId) || isAdmin();
       allow delete: if false;
     }
 
-    match /passengers/{passengerId} {
-      allow read, create, update: if isOwner(passengerId) || isAdmin();
-      allow delete: if false;
-    }
+    // ─── Trips ─────────────────────────────────────────────────────────
 
     match /trips/{tripId} {
       allow read: if signedIn();
-      allow create, update: if signedIn()
-        && (request.resource.data.driverId == request.auth.uid || isAdmin());
+
+      // Create: driver can only create trips for themselves.
+      allow create: if signedIn()
+        && request.resource.data.driverId == request.auth.uid
+        && fieldExists("routeId")
+        && fieldExists("status")
+        && reasonableSize();
+
+      // Update: driver can update their own trips; admin can update any.
+      // The driverId and routeId cannot be changed after creation.
+      allow update: if isAdmin()
+        || (signedIn()
+          && resource.data.driverId == request.auth.uid
+          && ownerFieldUnchanged("driverId")
+          && ownerFieldUnchanged("routeId")
+          && reasonableSize());
+
       allow delete: if isAdmin();
     }
 
+    // ─── Bookings ──────────────────────────────────────────────────────
+
     match /bookings/{bookingId} {
+      // Read: only the passenger who booked, the driver assigned, or admin.
       allow read: if signedIn()
         && (resource.data.passengerId == request.auth.uid
           || resource.data.driverId == request.auth.uid
           || isAdmin());
+
+      // Create: a signed-in user can create a booking only for themselves.
       allow create: if signedIn()
-        && request.resource.data.passengerId == request.auth.uid;
+        && request.resource.data.passengerId == request.auth.uid
+        && fieldExists("driverId")
+        && fieldExists("routeId")
+        && fieldExists("pickupLocation")
+        && fieldExists("dropOffLocation")
+        && reasonableSize();
+
+      // Update: passenger or driver can update their own bookings; admin can update any.
       allow update: if signedIn()
         && (resource.data.passengerId == request.auth.uid
           || resource.data.driverId == request.auth.uid
-          || isAdmin());
-      allow delete: if false;
+          || isAdmin())
+        && ownerFieldUnchanged("passengerId")
+        && ownerFieldUnchanged("driverId")
+        && ownerFieldUnchanged("routeId")
+        && reasonableSize();
+
+      allow delete: if isAdmin();
+    }
+
+    // ─── Driver locations (privacy-sensitive) ──────────────────────────
+    //
+    // Separate from driver profiles so we can apply stricter rules.
+    // The service layer filters which locations are sent to passengers.
+
+    match /driverLocations/{uid} {
+      // Only the driver themselves can write their location.
+      allow write: if isOwner(uid);
+
+      // Read access: the driver themselves, OR any signed-in user.
+      // NOTE: For stricter privacy in production, you could restrict reads
+      // to passengers who have an active booking with this driver. This would
+      // require a subcollection or a query-based approach since Firestore
+      // rules don't support complex joins. The current approach relies on the
+      // service layer to filter which driver locations are exposed to passengers.
+      allow read: if signedIn();
     }
   }
 }

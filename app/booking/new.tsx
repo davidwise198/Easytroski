@@ -8,87 +8,80 @@ import AppText from "../../src/components/ui/AppText";
 import PrimaryButton from "../../src/components/ui/PrimaryButton";
 import AuthGate from "../../src/components/AuthGate";
 import { auth } from "../../src/services/firebase";
-import { createBooking, createLocation, getAvailableTrips, getRoute } from "../../src/services/transport";
+import { createBooking, getRoute } from "../../src/services/transport";
 import { COLORS, SPACING } from "../../src/theme";
-import { Route, Trip } from "../../src/types/models";
+import { Route } from "../../src/types/models";
+import { showToast } from "../../src/utils/toast";
 
+/**
+ * Simplified booking screen — auto-books 1 seat from origin → destination.
+ * No stop/pickup selection. The passenger just confirms the booking.
+ */
 export default function NewBookingScreen() {
   const { routeId } = useLocalSearchParams<{ routeId?: string }>();
   const [route, setRoute] = useState<Route | null>(null);
-  const [trips, setTrips] = useState<Trip[]>([]);
-  const [pickupIndex, setPickupIndex] = useState(0);
-  const [dropOffIndex, setDropOffIndex] = useState(1);
-  const [seats, setSeats] = useState(1);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [booked, setBooked] = useState(false);
 
-  const loadBookingData = useCallback(async () => {
+  useEffect(() => {
     if (!routeId) {
       setError("This route could not be found.");
       setLoading(false);
       return;
     }
 
-    try {
-      const [loadedRoute, availableTrips] = await Promise.all([
-        getRoute(routeId),
-        getAvailableTrips(routeId),
-      ]);
-      setRoute(loadedRoute);
-      setTrips(availableTrips);
-      if (loadedRoute && loadedRoute.stops.length < 2) {
-        setDropOffIndex(0);
-      }
-    } catch (loadError) {
-      console.error("Booking data error:", loadError);
-      setError("We could not load this route. Please try again.");
-    } finally {
-      setLoading(false);
-    }
+    getRoute(routeId)
+      .then((r) => {
+        setRoute(r);
+        if (!r) setError("This route no longer exists.");
+      })
+      .catch(() => setError("We could not load this route. Please try again."))
+      .finally(() => setLoading(false));
   }, [routeId]);
 
-  useEffect(() => {
-    void loadBookingData();
-  }, [loadBookingData]);
-
-  const handleCreateBooking = async () => {
+  const handleBook = useCallback(async () => {
     const passengerId = auth.currentUser?.uid;
-    const selectedTrip = trips[0];
-    if (!passengerId || !route || !selectedTrip) {
-      return;
-    }
+    if (!passengerId || !route) return;
 
     setSubmitting(true);
     try {
-      const stops = [route.origin, ...route.stops, route.destination];
+      // Book 1 seat from origin → destination
       await createBooking({
         passengerId,
-        driverId: selectedTrip.driverId,
+        driverId: "", // Will be assigned by driver
         routeId: route.id,
-        pickupLocation: createLocation(stops[pickupIndex]),
-        dropOffLocation: createLocation(stops[dropOffIndex]),
-        seats,
+        pickupLocation: {
+          latitude: 0,
+          longitude: 0,
+          address: route.origin,
+        },
+        dropOffLocation: {
+          latitude: 0,
+          longitude: 0,
+          address: route.destination,
+        },
+        seats: 1,
       });
-      alert("Booking request sent. Your driver will confirm the ride shortly.");
-      router.replace("/passenger-dashboard");
-    } catch (bookingError) {
-      console.error("Booking creation error:", bookingError);
-      alert("We could not create your booking. Please try again.");
+      setBooked(true);
+      showToast("success", "Booking sent", `Your driver will confirm the ${route.origin} → ${route.destination} trip shortly.`);
+    } catch {
+      showToast("error", "Booking failed", "We could not create your booking. Please try again.");
     } finally {
       setSubmitting(false);
     }
-  };
+  }, [route]);
 
   if (loading) {
     return (
       <AuthGate>
-      <AppBackground>
-        <View style={styles.centerState}>
-          <ActivityIndicator size="large" color={COLORS.primary} />
-          <AppText variant="body" style={styles.stateText}>Loading route details...</AppText>
-        </View>
-      </AppBackground>
+        <AppBackground>
+          <View style={styles.centerState}>
+            <ActivityIndicator size="large" color={COLORS.primary} />
+            <AppText variant="body" style={styles.stateText}>Loading route...</AppText>
+          </View>
+        </AppBackground>
       </AuthGate>
     );
   }
@@ -96,93 +89,77 @@ export default function NewBookingScreen() {
   if (error || !route) {
     return (
       <AuthGate>
-      <AppBackground>
-        <View style={styles.centerState}>
-          <MaterialCommunityIcons name="map-marker-off-outline" size={46} color={COLORS.accent} />
-          <AppText variant="heading" style={styles.stateTitle}>Route unavailable</AppText>
-          <AppText variant="body" style={styles.stateText}>{error || "This route no longer exists."}</AppText>
-          <PrimaryButton title="Back to routes" onPress={() => router.back()} style={styles.stateButton} />
-        </View>
-      </AppBackground>
+        <AppBackground>
+          <View style={styles.centerState}>
+            <MaterialCommunityIcons name="map-marker-off-outline" size={46} color={COLORS.accent} />
+            <AppText variant="heading" style={styles.stateTitle}>Route unavailable</AppText>
+            <AppText variant="body" style={styles.stateText}>{error || "This route no longer exists."}</AppText>
+            <PrimaryButton title="Back" onPress={() => router.back()} style={styles.stateButton} />
+          </View>
+        </AppBackground>
       </AuthGate>
     );
   }
 
-  const stops = [route.origin, ...route.stops, route.destination];
-  const hasAvailableTrip = trips.length > 0;
+  if (booked) {
+    return (
+      <AuthGate>
+        <AppBackground>
+          <View style={styles.centerState}>
+            <View style={styles.successIcon}>
+              <MaterialCommunityIcons name="check-circle" size={56} color={COLORS.primary} />
+            </View>
+            <AppText variant="heading" style={styles.stateTitle}>Booking sent!</AppText>
+            <AppText variant="body" style={styles.stateText}>
+              {route.origin} → {route.destination}{"\n"}Your driver will confirm shortly.
+            </AppText>
+            <PrimaryButton title="Back to dashboard" onPress={() => router.replace("/passenger-dashboard")} style={styles.stateButton} />
+          </View>
+        </AppBackground>
+      </AuthGate>
+    );
+  }
 
   return (
     <AuthGate>
-    <AppBackground>
-      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
-        <Pressable style={styles.backButton} onPress={() => router.back()}>
-          <MaterialCommunityIcons name="arrow-left" size={24} color={COLORS.primary} />
-        </Pressable>
-        <AppText variant="caption" style={styles.eyebrow}>BOOK YOUR RIDE</AppText>
-        <AppText variant="title" style={styles.title}>{route.origin} to {route.destination}</AppText>
-        <AppText variant="body" style={styles.subtitle}>Choose your stops and reserve your seats.</AppText>
+      <AppBackground>
+        <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+          <Pressable style={styles.backButton} onPress={() => router.back()}>
+            <MaterialCommunityIcons name="arrow-left" size={24} color={COLORS.primary} />
+          </Pressable>
 
-        {!hasAvailableTrip ? (
-          <View style={styles.emptyPanel}>
-            <MaterialCommunityIcons name="bus-alert" size={42} color={COLORS.primary} />
-            <AppText variant="heading" style={styles.panelTitle}>No vehicles available</AppText>
-            <AppText variant="body" style={styles.panelText}>There are no active trotros on this route right now.</AppText>
+          <AppText variant="caption" style={styles.eyebrow}>BOOK YOUR RIDE</AppText>
+          <AppText variant="title" style={styles.title}>{route.origin} → {route.destination}</AppText>
+          <AppText variant="body" style={styles.subtitle}>
+            Book 1 seat on this route. Your driver will confirm the trip.
+          </AppText>
+
+          <View style={styles.routeCard}>
+            <View style={styles.routeIcon}>
+              <MaterialCommunityIcons name="bus" size={28} color={COLORS.primary} />
+            </View>
+            <View style={styles.routeInfo}>
+              <AppText variant="heading" style={styles.routeTitle}>{route.origin} → {route.destination}</AppText>
+              <AppText variant="caption" style={styles.routeStops}>
+                {route.stops.length} {route.stops.length === 1 ? "stop" : "stops"} along the way
+              </AppText>
+            </View>
           </View>
-        ) : (
-          <View style={styles.form}>
-            <AppText variant="heading" style={styles.sectionTitle}>Pickup point</AppText>
-            <View style={styles.stopList}>
-              {stops.map((stop, index) => (
-                <Pressable
-                  key={`pickup-${stop}`}
-                  style={[styles.stopOption, pickupIndex === index && styles.selectedStop]}
-                  onPress={() => {
-                    setPickupIndex(index);
-                    if (dropOffIndex <= index) setDropOffIndex(Math.min(index + 1, stops.length - 1));
-                  }}
-                >
-                  <MaterialCommunityIcons name={pickupIndex === index ? "radiobox-marked" : "radiobox-blank"} size={20} color={COLORS.primary} />
-                  <AppText variant="body" style={styles.stopText}>{stop}</AppText>
-                </Pressable>
-              ))}
-            </View>
 
-            <AppText variant="heading" style={styles.sectionTitle}>Drop-off point</AppText>
-            <View style={styles.stopList}>
-              {stops.map((stop, index) => (
-                <Pressable
-                  key={`dropoff-${stop}`}
-                  disabled={index <= pickupIndex}
-                  style={[styles.stopOption, dropOffIndex === index && styles.selectedStop, index <= pickupIndex && styles.disabledStop]}
-                  onPress={() => setDropOffIndex(index)}
-                >
-                  <MaterialCommunityIcons name={dropOffIndex === index ? "radiobox-marked" : "radiobox-blank"} size={20} color={index <= pickupIndex ? COLORS.textSecondary : COLORS.primary} />
-                  <AppText variant="body" style={styles.stopText}>{stop}</AppText>
-                </Pressable>
-              ))}
-            </View>
+          <PrimaryButton
+            title={submitting ? "Booking..." : "Confirm booking"}
+            onPress={() => void handleBook()}
+            disabled={submitting}
+          />
 
-            <View style={styles.seatRow}>
-              <View>
-                <AppText variant="heading" style={styles.sectionTitle}>Seats</AppText>
-                <AppText variant="caption" style={styles.seatHint}>How many seats do you need?</AppText>
-              </View>
-              <View style={styles.stepper}>
-                <Pressable style={styles.stepButton} onPress={() => setSeats(Math.max(1, seats - 1))}>
-                  <MaterialCommunityIcons name="minus" size={18} color={COLORS.primary} />
-                </Pressable>
-                <AppText variant="heading" style={styles.seatCount}>{seats}</AppText>
-                <Pressable style={styles.stepButton} onPress={() => setSeats(Math.min(4, seats + 1))}>
-                  <MaterialCommunityIcons name="plus" size={18} color={COLORS.primary} />
-                </Pressable>
-              </View>
-            </View>
-
-            <PrimaryButton title={submitting ? "Sending request..." : "Request booking"} onPress={() => void handleCreateBooking()} disabled={submitting || pickupIndex >= dropOffIndex} />
-          </View>
-        )}
-      </ScrollView>
-    </AppBackground>
+          <PrimaryButton
+            title="Cancel"
+            onPress={() => router.back()}
+            variant="outline"
+            style={styles.cancelButton}
+          />
+        </ScrollView>
+      </AppBackground>
     </AuthGate>
   );
 }
@@ -192,24 +169,33 @@ const styles = StyleSheet.create({
   backButton: { width: 40, height: 40, alignItems: "center", justifyContent: "center", marginBottom: SPACING.lg },
   eyebrow: { color: COLORS.primary, fontSize: 10, fontWeight: "800", letterSpacing: 1.1, marginBottom: SPACING.xs },
   title: { color: COLORS.navy, fontSize: 30, lineHeight: 37 },
-  subtitle: { color: COLORS.textSecondary, marginTop: SPACING.sm, marginBottom: SPACING.xl },
-  form: { gap: SPACING.md },
-  sectionTitle: { color: COLORS.navy, fontSize: 17, lineHeight: 23 },
-  stopList: { gap: SPACING.sm },
-  stopOption: { minHeight: 52, flexDirection: "row", alignItems: "center", paddingHorizontal: SPACING.md, borderRadius: 16, backgroundColor: "rgba(232,243,255,0.7)", borderWidth: 1, borderColor: "transparent" },
-  selectedStop: { borderColor: COLORS.primary, backgroundColor: COLORS.blueWash },
-  disabledStop: { opacity: 0.42 },
-  stopText: { color: COLORS.navy, marginLeft: SPACING.sm },
-  seatRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginTop: SPACING.sm },
-  seatHint: { color: COLORS.textSecondary, marginTop: 2 },
-  stepper: { flexDirection: "row", alignItems: "center", gap: SPACING.md },
-  stepButton: { width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.blueWash },
-  seatCount: { color: COLORS.navy, minWidth: 20, textAlign: "center" },
-  emptyPanel: { alignItems: "center", justifyContent: "center", minHeight: 260, padding: SPACING.xl },
-  panelTitle: { color: COLORS.navy, textAlign: "center", marginTop: SPACING.md },
-  panelText: { color: COLORS.textSecondary, textAlign: "center", marginTop: SPACING.sm },
+  subtitle: { color: COLORS.textSecondary, marginTop: SPACING.sm, marginBottom: SPACING.xl, lineHeight: 22 },
+  routeCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: SPACING.lg,
+    borderRadius: 20,
+    backgroundColor: COLORS.blueWash,
+    borderWidth: 1,
+    borderColor: COLORS.veryLightBlue,
+    marginBottom: SPACING.xl,
+  },
+  routeIcon: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.white,
+    marginRight: SPACING.md,
+  },
+  routeInfo: { flex: 1 },
+  routeTitle: { color: COLORS.navy, fontSize: 17, lineHeight: 22 },
+  routeStops: { color: COLORS.textSecondary, marginTop: SPACING.xs },
+  cancelButton: { marginTop: SPACING.md },
   centerState: { flex: 1, alignItems: "center", justifyContent: "center", padding: SPACING.xl },
   stateTitle: { color: COLORS.navy, textAlign: "center", marginTop: SPACING.md },
-  stateText: { color: COLORS.textSecondary, textAlign: "center", marginTop: SPACING.sm },
+  stateText: { color: COLORS.textSecondary, textAlign: "center", marginTop: SPACING.sm, lineHeight: 22 },
   stateButton: { marginTop: SPACING.lg },
+  successIcon: { marginBottom: SPACING.md },
 });

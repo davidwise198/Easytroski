@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
@@ -22,6 +23,7 @@ export default function RoutesScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [expandedRouteId, setExpandedRouteId] = useState<string | null>(null);
 
   const loadRoutes = useCallback(async (isRefresh = false) => {
     if (isRefresh) {
@@ -45,6 +47,10 @@ export default function RoutesScreen() {
   useEffect(() => {
     void loadRoutes();
   }, [loadRoutes]);
+
+  const toggleRoute = (routeId: string) => {
+    setExpandedRouteId(expandedRouteId === routeId ? null : routeId);
+  };
 
   return (
     <AuthGate>
@@ -89,28 +95,82 @@ export default function RoutesScreen() {
           </View>
         ) : (
           <View style={styles.routeList}>
-            {routes.map((route) => (
-              <View key={route.id} style={styles.routeCard}>
-                <View style={styles.routeIcon}>
-                  <MaterialCommunityIcons name="transit-connection-variant" size={24} color={COLORS.secondary} />
+            {routes.map((route) => {
+              const isExpanded = expandedRouteId === route.id;
+              const allStops = [route.origin, ...route.stops, route.destination];
+
+              return (
+                <View key={route.id} style={styles.routeCard}>
+                  {/* ─── Route header (tappable) ─── */}
+                  <Pressable
+                    style={({ pressed }) => [
+                      styles.routeHeader,
+                      pressed && styles.routeHeaderPressed,
+                    ]}
+                    onPress={() => toggleRoute(route.id)}
+                  >
+                    <View style={styles.routeIcon}>
+                      <MaterialCommunityIcons name="transit-connection-variant" size={24} color={COLORS.secondary} />
+                    </View>
+                    <View style={styles.routeCopy}>
+                      <AppText variant="heading" style={styles.routeTitle}>
+                        {route.origin} → {route.destination}
+                      </AppText>
+                      <AppText variant="caption" style={styles.stopsHint}>
+                        {route.stops.length} {route.stops.length === 1 ? "stop" : "stops"} along the way
+                      </AppText>
+                    </View>
+                    <MaterialCommunityIcons
+                      name={isExpanded ? "chevron-up" : "chevron-down"}
+                      size={20}
+                      color="rgba(255,255,255,0.5)"
+                    />
+                  </Pressable>
+
+                  {/* ─── Expanded: stops list + view button ─── */}
+                  {isExpanded && (
+                    <View style={styles.routeDetail}>
+                      <View style={styles.detailDivider} />
+
+                      <AppText variant="caption" style={styles.detailLabel}>
+                        THIS ROUTE STOPS AT
+                      </AppText>
+
+                      <View style={styles.stopsList}>
+                        {allStops.map((stop, index) => (
+                          <View key={`stop-${index}`} style={styles.stopRow}>
+                            <View style={styles.stopDot}>
+                              <View style={[
+                                styles.stopDotInner,
+                                (index === 0 || index === allStops.length - 1) && styles.stopDotEndpoint,
+                              ]} />
+                            </View>
+                            {index < allStops.length - 1 && <View style={styles.stopLine} />}
+                            <AppText
+                              variant="body"
+                              style={[
+                                styles.stopName,
+                                (index === 0 || index === allStops.length - 1) && styles.stopNameEndpoint,
+                              ]}
+                            >
+                              {stop}
+                              {index === 0 ? "  (Start)" : index === allStops.length - 1 ? "  (End)" : ""}
+                            </AppText>
+                          </View>
+                        ))}
+                      </View>
+
+                      <PrimaryButton
+                        title="View drivers on map"
+                        onPress={() => router.push(`/passenger-map?routeId=${route.id}`)}
+                        variant="outline"
+                        style={styles.viewMapButton}
+                      />
+                    </View>
+                  )}
                 </View>
-                <View style={styles.routeCopy}>
-                  <AppText variant="heading" style={styles.routeTitle}>{route.origin}</AppText>
-                  <View style={styles.destinationRow}>
-                    <MaterialCommunityIcons name="arrow-right" size={15} color={COLORS.primary} />
-                    <AppText variant="body" style={styles.destination}>{route.destination}</AppText>
-                  </View>
-                  <AppText variant="caption" style={styles.stops}>
-                    {route.stops.length} {route.stops.length === 1 ? "stop" : "stops"} along this route
-                  </AppText>
-                </View>
-                <PrimaryButton
-                  title="Book"
-                  onPress={() => router.push(`/booking/new?routeId=${route.id}`)}
-                  style={styles.bookButton}
-                />
-              </View>
-            ))}
+              );
+            })}
           </View>
         )}
 
@@ -161,17 +221,24 @@ const styles = StyleSheet.create({
     gap: SPACING.md,
   },
   routeCard: {
-    minHeight: 96,
-    flexDirection: "row",
-    alignItems: "center",
-    padding: SPACING.md,
     borderRadius: 20,
     backgroundColor: COLORS.navy,
+    overflow: "hidden",
     shadowColor: COLORS.navy,
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.16,
     shadowRadius: 14,
     elevation: 5,
+  },
+
+  /* ── Route header ── */
+  routeHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: SPACING.md,
+  },
+  routeHeaderPressed: {
+    opacity: 0.85,
   },
   routeIcon: {
     width: 48,
@@ -188,28 +255,83 @@ const styles = StyleSheet.create({
   },
   routeTitle: {
     color: COLORS.secondary,
-    fontSize: 17,
+    fontSize: 16,
     lineHeight: 22,
   },
-  destinationRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: SPACING.xs,
+  stopsHint: {
+    color: "rgba(255,255,255,0.55)",
     marginTop: 2,
   },
-  destination: {
-    color: "rgba(255,255,255,0.88)",
-    fontSize: 14,
-  },
-  stops: {
-    color: "rgba(255,255,255,0.62)",
-    marginTop: SPACING.xs,
-  },
-  bookButton: {
-    height: 42,
-    borderRadius: 21,
+
+  /* ── Expanded detail ── */
+  routeDetail: {
     paddingHorizontal: SPACING.md,
+    paddingBottom: SPACING.md,
   },
+  detailDivider: {
+    height: 1,
+    backgroundColor: "rgba(255,255,255,0.12)",
+    marginBottom: SPACING.md,
+  },
+  detailLabel: {
+    color: "rgba(255,255,255,0.5)",
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 1,
+    marginBottom: SPACING.sm,
+  },
+
+  /* ── Stops timeline ── */
+  stopsList: {
+    marginBottom: SPACING.md,
+  },
+  stopRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    minHeight: 32,
+  },
+  stopDot: {
+    width: 16,
+    alignItems: "center",
+    paddingTop: 6,
+  },
+  stopDotInner: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "rgba(255,255,255,0.35)",
+  },
+  stopDotEndpoint: {
+    backgroundColor: COLORS.secondary,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+  },
+  stopLine: {
+    position: "absolute",
+    left: 7.5,
+    top: 16,
+    width: 1,
+    height: 16,
+    backgroundColor: "rgba(255,255,255,0.2)",
+  },
+  stopName: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 14,
+    lineHeight: 22,
+    marginLeft: SPACING.sm,
+  },
+  stopNameEndpoint: {
+    color: COLORS.secondary,
+    fontWeight: "600",
+  },
+
+  viewMapButton: {
+    borderColor: COLORS.secondary,
+    backgroundColor: "rgba(255,255,255,0.15)",
+  },
+
+  /* ── States ── */
   stateContainer: {
     minHeight: 250,
     alignItems: "center",

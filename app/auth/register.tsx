@@ -21,6 +21,7 @@ import SectionTitle from "../../src/components/ui/SectionTitle";
 import { SPACING, COLORS } from "../../src/theme";
 import { registerUser, registerWithGoogle } from "../../src/services/auth";
 import { getFriendlyError } from "../../src/utils/firebaseErrors";
+import { showToast } from "../../src/utils/toast";
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -89,7 +90,7 @@ function GoogleRegisterButton({
       if (idToken) {
         onComplete(idToken, response.params?.access_token);
       } else {
-        alert("Google did not return an identity token. Please try again.");
+        showToast("error", "Google sign-in", "Google did not return an identity token. Please try again.");
       }
     } else if (response?.type === "error") {
       const code = response.errorCode || "oauth-error";
@@ -105,17 +106,17 @@ function GoogleRegisterButton({
         message = "Google sign-up is not enabled. Enable it in Firebase Console > Authentication > Sign-in method.";
       }
 
-      alert(message);
+      showToast("error", "Google sign-up failed", message);
     }
   }, [onComplete, response]);
 
   const handlePress = async () => {
     if (!isConfigured) {
       const platformName = Platform.OS === "android" ? "Android" : "iOS";
-      alert(
-        `Google sign-up is not configured for ${platformName}.\n\n` +
-          `Add EXPO_PUBLIC_GOOGLE_${platformName.toUpperCase()}_CLIENT_ID to your .env file.\n\n` +
-          "You can find/create this in Google Cloud Console > APIs & Services > Credentials."
+      showToast(
+        "warning",
+        `Google sign-up not configured for ${platformName}`,
+        `Add EXPO_PUBLIC_GOOGLE_${platformName.toUpperCase()}_CLIENT_ID to your .env file.`
       );
       return;
     }
@@ -129,7 +130,7 @@ function GoogleRegisterButton({
       await promptAsync();
     } catch (error) {
       console.error("Google prompt error:", error);
-      alert(`Google registration failed (${getErrorCode(error)}). Please try again.`);
+      showToast("error", "Google registration failed", "Please try again.");
     }
   };
 
@@ -166,27 +167,27 @@ export default function RegisterScreen() {
 
   const handleRegister = async () => {
     if (!fullName.trim()) {
-      alert("Please enter your full name");
+      showToast("warning", "Missing name", "Please enter your full name.");
       return;
     }
 
     if (!phoneNumber.trim()) {
-      alert("Please enter your phone number");
+      showToast("warning", "Missing phone", "Please enter your phone number.");
       return;
     }
 
     if (!email.trim()) {
-      alert("Please enter your email address");
+      showToast("warning", "Missing email", "Please enter your email address.");
       return;
     }
 
     if (!password) {
-      alert("Please enter a password");
+      showToast("warning", "Missing password", "Please enter a password.");
       return;
     }
 
     if (password !== confirmPassword) {
-      alert("Passwords do not match");
+      showToast("error", "Passwords don't match", "Please make sure both passwords are the same.");
       return;
     }
 
@@ -198,13 +199,13 @@ export default function RegisterScreen() {
         !vehicleSeatingCapacity.trim() ||
         !preferredRoute.trim()
       ) {
-        alert("Please complete all driver details");
+        showToast("warning", "Incomplete details", "Please complete all driver details.");
         return;
       }
     }
 
     if (!agreeToTerms) {
-      alert("Please accept the terms to continue");
+      showToast("warning", "Terms required", "Please accept the terms to continue.");
       return;
     }
 
@@ -229,7 +230,7 @@ export default function RegisterScreen() {
       }
     } catch (error) {
       console.error("Register error:", error);
-      alert(getFriendlyError(error));
+      showToast("error", "Registration failed", getFriendlyError(error));
     } finally {
       setLoading(false);
     }
@@ -237,7 +238,7 @@ export default function RegisterScreen() {
 
   const validateGoogleProfile = () => {
     if (!agreeToTerms) {
-      alert("Please accept the terms to continue");
+      showToast("warning", "Terms required", "Please accept the terms to continue.");
       return false;
     }
 
@@ -260,7 +261,7 @@ export default function RegisterScreen() {
       const errorCode = getErrorCode(error);
       const errorMessage = getErrorMessage(error);
       console.error("Google registration error:", { errorCode, errorMessage, error });
-      alert(getFriendlyError(error));
+      showToast("error", "Registration failed", getFriendlyError(error));
     } finally {
       setLoading(false);
     }

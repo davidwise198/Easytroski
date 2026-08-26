@@ -10,6 +10,7 @@ import { auth } from "../../src/services/firebase";
 import { updateUserProfile } from "../../src/services/auth";
 import { SPACING } from "../../src/theme";
 import { getFriendlyError } from "../../src/utils/firebaseErrors";
+import { showToast } from "../../src/utils/toast";
 
 export default function RoleSelectionScreen() {
   const [loading, setLoading] = useState(false);
@@ -18,7 +19,7 @@ export default function RoleSelectionScreen() {
     const user = auth.currentUser;
 
     if (!user) {
-      alert("No user is currently signed in.");
+      showToast("error", "Not signed in", "No user is currently signed in.");
       router.replace("/auth/login");
       return;
     }
@@ -34,7 +35,7 @@ export default function RoleSelectionScreen() {
       }
     } catch (error) {
       console.error("Role selection error:", error);
-      alert(getFriendlyError(error));
+      showToast("error", "Role update failed", getFriendlyError(error));
     } finally {
       setLoading(false);
     }

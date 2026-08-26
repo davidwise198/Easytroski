@@ -73,10 +73,17 @@ const createUserProfile = async (user: User, profileData: UserProfileData) => {
 };
 
 const createDriverProfile = async (userId: string, driverData: DriverProfileData) => {
+  // Fetch the user's profile to get name, email, phone
+  const userDoc = await getDoc(doc(db, "users", userId));
+  const userData = userDoc.exists() ? userDoc.data() : {};
+
   await setDoc(
     doc(db, "drivers", userId),
     {
       userId,
+      name: userData.name || "",
+      email: userData.email || "",
+      phone: userData.phone || "",
       licenseNumber: driverData.driverLicenseNumber,
       vehicleRegistration: driverData.vehicleRegistrationNumber,
       vehicleColor: driverData.vehicleColor,
@@ -229,6 +236,34 @@ export const completeDriverProfile = async (
 ) => {
   await createDriverProfile(userId, driverData);
   await updateUserProfile(userId, { role: "driver" });
+};
+
+// Sync user profile data (name, email, phone) to the driver collection.
+// Called on login to ensure driver profiles are never stale.
+export const syncDriverProfile = async (userId: string) => {
+  try {
+    const driverDoc = await getDoc(doc(db, "drivers", userId));
+    if (!driverDoc.exists()) return; // not a driver
+
+    const userDoc = await getDoc(doc(db, "users", userId));
+    if (!userDoc.exists()) return;
+
+    const userData = userDoc.data();
+    const driverData = driverDoc.data();
+
+    // Only update if something is missing or different
+    const updates: Record<string, unknown> = {};
+    if (userData.name && driverData.name !== userData.name) updates.name = userData.name;
+    if (userData.email && driverData.email !== userData.email) updates.email = userData.email;
+    if (userData.phone && driverData.phone !== userData.phone) updates.phone = userData.phone;
+
+    if (Object.keys(updates).length > 0) {
+      updates.updatedAt = serverTimestamp();
+      await setDoc(doc(db, "drivers", userId), updates, { merge: true });
+    }
+  } catch {
+    // Best-effort — don't fail login if sync fails
+  }
 };
 
 // Send password reset email

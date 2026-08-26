@@ -15,7 +15,11 @@ export type BookingStatus =
 export type TripStatus =
   | "offline"
   | "online"
-  | "in_progress";
+  | "scheduled"
+  | "boarding"
+  | "in_progress"
+  | "completed"
+  | "cancelled";
 
 
 export type TripDirection =
@@ -48,6 +52,7 @@ export interface Vehicle {
   driverId: string;
   numberPlate: string;
   color: string;
+  brand?: string;
   capacity: number;
   active: boolean;
 }
@@ -57,7 +62,11 @@ export interface Vehicle {
 export interface Driver {
   id: string;
   userId: string;
-  vehicleId: string;
+  vehicleId?: string;
+
+  name?: string;
+  email?: string;
+  phone?: string;
 
   routeId?: string;
 
@@ -128,4 +137,29 @@ export interface Trip {
 
   startTime?: Date;
   endTime?: Date;
+
+  // Map-related fields (populated via joins, not stored on trip)
+  driverName?: string;
+  vehiclePlate?: string;
+  vehicleColor?: string;
+  vehicleBrand?: string;
+  vehicleCapacity?: number;
+  origin?: string;
+  destination?: string;
+}
+
+
+// Active trip marker data shown on the passenger map
+export interface ActiveTripMarker {
+  trip: Trip;
+  driverLocation: Location;
+  availableSeats: number;
+}
+
+
+// Driver location document in Firestore
+export interface DriverLocation {
+  latitude: number;
+  longitude: number;
+  updatedAt: string; // ISO timestamp
 }

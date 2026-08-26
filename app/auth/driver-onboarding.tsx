@@ -12,6 +12,7 @@ import { auth } from "../../src/services/firebase";
 import { completeDriverProfile } from "../../src/services/auth";
 import { SPACING, COLORS } from "../../src/theme";
 import { getFriendlyError } from "../../src/utils/firebaseErrors";
+import { showToast } from "../../src/utils/toast";
 
 export default function DriverOnboardingScreen() {
   const [phoneNumber, setPhoneNumber] = useState("");
@@ -26,28 +27,28 @@ export default function DriverOnboardingScreen() {
     const user = auth.currentUser;
 
     if (!user) {
-      alert("No user is currently signed in.");
+      showToast("error", "Not signed in", "No user is currently signed in.");
       router.replace("/auth/login");
       return;
     }
 
     if (!driverLicenseNumber.trim()) {
-      alert("Please enter your driver's licence number");
+      showToast("warning", "Licence required", "Please enter your driver's licence number.");
       return;
     }
 
     if (!vehicleRegistrationNumber.trim()) {
-      alert("Please enter your vehicle registration number");
+      showToast("warning", "Registration required", "Please enter your vehicle registration number.");
       return;
     }
 
     if (!vehicleColor.trim()) {
-      alert("Please enter your vehicle colour");
+      showToast("warning", "Colour required", "Please enter your vehicle colour.");
       return;
     }
 
     if (!vehicleSeatingCapacity.trim() || isNaN(parseInt(vehicleSeatingCapacity, 10))) {
-      alert("Please enter a valid seating capacity");
+      showToast("warning", "Invalid capacity", "Please enter a valid seating capacity.");
       return;
     }
 
@@ -69,7 +70,7 @@ export default function DriverOnboardingScreen() {
       router.replace("/driver-dashboard");
     } catch (error) {
       console.error("Driver onboarding error:", error);
-      alert(getFriendlyError(error));
+      showToast("error", "Setup failed", getFriendlyError(error));
     } finally {
       setLoading(false);
     }

@@ -12,6 +12,7 @@ import SectionTitle from "../../src/components/ui/SectionTitle";
 import { SPACING, COLORS } from "../../src/theme";
 import { resetPassword } from "../../src/services/auth";
 import { getFriendlyError } from "../../src/utils/firebaseErrors";
+import { showToast } from "../../src/utils/toast";
 
 export default function ForgotPasswordScreen() {
   const [email, setEmail] = useState("");
@@ -27,7 +28,7 @@ export default function ForgotPasswordScreen() {
       await resetPassword(trimmedEmail);
       setSent(true);
     } catch (error) {
-      alert(getFriendlyError(error));
+      showToast("error", "Reset failed", getFriendlyError(error));
     } finally {
       setLoading(false);
     }

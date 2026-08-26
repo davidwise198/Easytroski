@@ -3,6 +3,9 @@ import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 
 import AuthProvider, { useAuth } from "../src/contexts/AuthContext";
+import LocationProvider from "../src/contexts/LocationContext";
+import { ToastProvider } from "../src/contexts/ToastContext";
+import ErrorBoundary from "../src/components/ui/ErrorBoundary";
 import AppIntro from "../src/components/ui/AppIntro";
 
 SplashScreen.preventAutoHideAsync().catch(() => {
@@ -33,8 +36,14 @@ function RootLayoutNav() {
 
 export default function RootLayout() {
   return (
-    <AuthProvider>
-      <RootLayoutNav />
-    </AuthProvider>
+    <ErrorBoundary>
+      <AuthProvider>
+        <LocationProvider>
+          <ToastProvider>
+            <RootLayoutNav />
+          </ToastProvider>
+        </LocationProvider>
+      </AuthProvider>
+    </ErrorBoundary>
   );
 }

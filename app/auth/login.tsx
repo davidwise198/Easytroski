@@ -20,6 +20,7 @@ import SectionTitle from "../../src/components/ui/SectionTitle";
 import { SPACING, COLORS } from "../../src/theme";
 import { loginUser, loginWithGoogle } from "../../src/services/auth";
 import { getFriendlyError } from "../../src/utils/firebaseErrors";
+import { showToast } from "../../src/utils/toast";
 
 WebBrowser.maybeCompleteAuthSession();
 
@@ -52,7 +53,7 @@ function GoogleLoginButton({
       if (idToken) {
         onComplete(idToken, response.params?.access_token);
       } else {
-        alert("Google did not return an identity token. Please try again.");
+        showToast("error", "Google sign-in", "Google did not return an identity token. Please try again.");
       }
     } else if (response?.type === "error") {
       const code = response.errorCode || "oauth-error";
@@ -68,17 +69,17 @@ function GoogleLoginButton({
         message = "Google sign-in is not enabled. Enable it in Firebase Console > Authentication > Sign-in method.";
       }
 
-      alert(message);
+      showToast("error", "Google sign-in failed", message);
     }
   }, [onComplete, response]);
 
   const handlePress = async () => {
     if (!isConfigured) {
       const platformName = Platform.OS === "android" ? "Android" : "iOS";
-      alert(
-        `Google sign-in is not configured for ${platformName}.\n\n` +
-          `Add EXPO_PUBLIC_GOOGLE_${platformName.toUpperCase()}_CLIENT_ID to your .env file.\n\n` +
-          "You can find/create this in Google Cloud Console > APIs & Services > Credentials."
+      showToast(
+        "warning",
+        `Google sign-in not configured for ${platformName}`,
+        `Add EXPO_PUBLIC_GOOGLE_${platformName.toUpperCase()}_CLIENT_ID to your .env file.`
       );
       return;
     }
@@ -92,7 +93,7 @@ function GoogleLoginButton({
       await promptAsync();
     } catch (error) {
       console.error("Google prompt error:", error);
-      alert("Google sign-in failed. Please try again.");
+      showToast("error", "Google sign-in failed", "Please try again.");
     }
   };
 
@@ -124,12 +125,14 @@ export default function LoginScreen() {
       const role = await getUserRole(loggedInUser);
       if (!role) {
         router.replace("/auth/role-selection");
+      } else if (role === "admin") {
+        router.replace("/admin-routes");
       } else {
         router.replace(role === "driver" ? "/driver-dashboard" : "/passenger-dashboard");
       }
     } catch (error) {
       console.error("Login error:", error);
-      alert(getFriendlyError(error));
+      showToast("error", "Login failed", getFriendlyError(error));
     } finally {
       setLoading(false);
     }
@@ -143,12 +146,14 @@ export default function LoginScreen() {
       const role = await getUserRole(loggedInUser);
       if (!role) {
         router.replace("/auth/role-selection");
+      } else if (role === "admin") {
+        router.replace("/admin-routes");
       } else {
         router.replace(role === "driver" ? "/driver-dashboard" : "/passenger-dashboard");
       }
     } catch (error) {
       console.error("Google login error:", error);
-      alert(getFriendlyError(error));
+      showToast("error", "Login failed", getFriendlyError(error));
     } finally {
       setLoading(false);
     }

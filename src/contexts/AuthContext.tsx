@@ -4,6 +4,9 @@ import { doc, onSnapshot } from "firebase/firestore";
 
 import { auth, db } from "../services/firebase";
 import { UserRole } from "../types/models";
+import { runCleanupTasks } from "../services/transport";
+import { syncDriverProfile } from "../services/auth";
+
 
 type AuthContextValue = {
   user: User | null;
@@ -39,6 +42,9 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
       unsubscribeProfile = undefined;
 
       if (firebaseUser) {
+        // Run cleanup once per session: cancel stale bookings, auto-offline inactive drivers
+        runCleanupTasks().catch(() => {});
+
         // Listen to the user's Firestore document for real-time role updates
         unsubscribeProfile = onSnapshot(
           doc(db, "users", firebaseUser.uid),
@@ -48,6 +54,10 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
               const role = data.role;
               if (role === "driver" || role === "passenger" || role === "admin") {
                 setUserRole(role as UserRole);
+                // Sync driver profile data (name, email, phone) to drivers collection
+                if (role === "driver") {
+                  syncDriverProfile(firebaseUser.uid).catch(() => {});
+                }
               } else {
                 setUserRole(null);
               }

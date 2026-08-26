@@ -23,4 +23,5 @@ export const COLORS = {
   success: "#22C55E",
   warning: "#F59E0B",
   danger: "#EF4444",
+  white: "#FFFFFF",
 };

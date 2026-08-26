@@ -28,7 +28,11 @@ export default function AuthGate({ children, allowedRoles }: AuthGateProps) {
     }
 
     if (allowedRoles && !allowedRoles.includes(userRole)) {
-      router.replace(userRole === "driver" ? "/driver-dashboard" : "/passenger-dashboard");
+      if (userRole === "admin") {
+        router.replace("/admin-routes");
+      } else {
+        router.replace(userRole === "driver" ? "/driver-dashboard" : "/passenger-dashboard");
+      }
       return;
     }
   }, [loading, user, userRole, allowedRoles]);
