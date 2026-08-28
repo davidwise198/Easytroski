@@ -1,0 +1,9 @@
+env: load .env
+env: export EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID EXPO_PUBLIC_GOOGLE_ANDROID_CLIENT_ID
+Starting project at C:\Users\USER\EasyTroski
+Starting Metro Bundler
+Waiting on http://localhost:19006
+Logs for your project will appear below.
+Web node_modules\expo-router\entry.js ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓░ 95.5% (906/927)
+Web Bundled 5166ms node_modules\expo-router\entry.js (940 modules)
+ LOG  [web] Logs will appear in the browser console

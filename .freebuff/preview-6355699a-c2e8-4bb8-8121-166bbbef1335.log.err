@@ -1,0 +1,4 @@
+The following packages should be updated for best compatibility with the installed expo version:
+  expo@54.0.36 - expected version: ~54.0.37
+  expo-constants@18.0.13 - expected version: ~18.0.14
+Your project may not work correctly until you install the expected versions of the packages.
