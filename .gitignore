@@ -41,3 +41,7 @@ yarn-error.*
 /ios
 /android
 google-services.json
+
+# Freebuff IDE
+.freebuff/
+.vscode/
