@@ -48,12 +48,6 @@
           "photosPermission": "Allow EasyTroski to access your photos for profile pictures.",
           "cameraPermission": "Allow EasyTroski to take photos for your profile picture."
         }
-      ],
-      [
-        "expo-notifications",
-        {
-          "sounds": []
-        }
       ]
     ],
     "extra": {
