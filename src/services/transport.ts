@@ -683,12 +683,66 @@ async function autoOfflineDriver(driverId: string) {
 }
 
 /**
+ * Auto-decline bookings that have been pending for over 5 minutes.
+ * The driver didn't respond in time — notify the passenger.
+ */
+export const cleanupExpiredBookings = async () => {
+  const EXPIRY_MS = 5 * 60 * 1000; // 5 minutes
+  const now = Date.now();
+
+  try {
+    const bookingsSnapshot = await getDocs(
+      query(
+        collection(db, "bookings"),
+        where("status", "==", "pending"),
+        limit(50)
+      )
+    );
+
+    for (const bookingDoc of bookingsSnapshot.docs) {
+      const booking = bookingDoc.data();
+      const createdAt = booking.createdAt;
+      if (!createdAt) continue;
+
+      const createdTime = new Date(createdAt).getTime();
+      if (now - createdTime > EXPIRY_MS) {
+        // Auto-decline the booking
+        await updateDoc(doc(db, "bookings", bookingDoc.id), {
+          status: "cancelled",
+          cancelledAt: new Date().toISOString(),
+          cancelledBy: "system",
+          cancelReason: "driver_no_response",
+        });
+
+        // Give the seat back
+        if (booking.driverId) {
+          try {
+            await incrementDriverSeats(booking.driverId);
+          } catch { /* best-effort */ }
+        }
+
+        // Notify the passenger
+        if (booking.passengerId) {
+          const routeLabel = booking.pickupLocation?.address
+            ? `${booking.pickupLocation.address} → ${booking.dropOffLocation?.address || "destination"}`
+            : "your route";
+          notifyPassengerOfRejection(booking.passengerId, routeLabel).catch(() => {});
+        }
+      }
+    }
+  } catch {
+    // Best-effort
+  }
+};
+
+/**
  * Run all cleanup tasks. Call this once on app startup.
  */
 export const runCleanupTasks = async () => {
-  // Run both in parallel — they're independent and best-effort
+  // Run all in parallel — they're independent and best-effort
   await Promise.allSettled([
     cleanupStaleBookings(),
     cleanupInactiveDrivers(),
+    cleanupExpiredBookings(),
   ]);
 };

@@ -309,23 +309,6 @@ export default function PassengerDashboardScreen() {
             </View>
           </FadeSlideIn>
 
-          {/* ─── Admin link ─── */}
-          <FadeSlideIn delay={420}>
-            <Pressable
-              style={styles.adminLink}
-              onPress={() => router.push("/admin-routes")}
-            >
-              <MaterialCommunityIcons
-                name="shield-crown-outline"
-                size={16}
-                color={COLORS.textSecondary}
-              />
-              <AppText variant="caption" style={styles.adminLinkText}>
-                Admin dashboard
-              </AppText>
-            </Pressable>
-          </FadeSlideIn>
-
           {/* ─── Sign out ─── */}
           <FadeSlideIn delay={460}>
             <Pressable

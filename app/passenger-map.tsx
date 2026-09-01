@@ -20,7 +20,7 @@ import { getActiveTripMarkers, subscribeActiveTripMarkers, subscribeDriverLocati
 import StarRating from "../src/components/ui/StarRating";
 import { createBooking, cancelBooking, rateDriver, getActiveRoutes } from "../src/services/transport";
 import { auth, db } from "../src/services/firebase";
-import { doc, onSnapshot } from "firebase/firestore";
+import { doc, onSnapshot, updateDoc } from "firebase/firestore";
 import { COLORS, SPACING } from "../src/theme";
 import { showToast } from "../src/utils/toast";
 import {
@@ -89,12 +89,16 @@ export default function PassengerMapScreen() {
   const [lastBookingId, setLastBookingId] = useState<string | null>(null);
   const [lastBookingStatus, setLastBookingStatus] = useState<string | null>(null);
   const [cancellingBooking, setCancellingBooking] = useState(false);
+  const [editingSeats, setEditingSeats] = useState(false);
+  const [bookingSeats, setBookingSeats] = useState(1);
   const [trackedDriverId, setTrackedDriverId] = useState<string | null>(null);
   const [trackedDriverLocation, setTrackedDriverLocation] = useState<{ latitude: number; longitude: number } | null>(null);
   const [showRating, setShowRating] = useState(false);
   const [ratingValue, setRatingValue] = useState(0);
   const [submittingRating, setSubmittingRating] = useState(false);
   const [tripToRate, setTripToRate] = useState<{ tripId: string; driverId: string } | null>(null);
+  const [driverApproaching, setDriverApproaching] = useState(false);
+  const [remainingSeats, setRemainingSeats] = useState<number | null>(null);
 
   // Selected trip for bottom sheet
   const [selectedMarker, setSelectedMarker] =
@@ -276,6 +280,36 @@ export default function PassengerMapScreen() {
     }
   }, [lastBookingId, user?.uid]);
 
+  // Get remaining seats from the tracked trip
+  useEffect(() => {
+    if (!trackedDriverId || lastBookingStatus !== "confirmed") {
+      setRemainingSeats(null);
+      return;
+    }
+    // Find the trip marker that matches this driver
+    const marker = markers.find(m => m.trip.driverId === trackedDriverId);
+    if (marker) {
+      setRemainingSeats(marker.availableSeats);
+    }
+  }, [trackedDriverId, lastBookingStatus, markers]);
+
+  // Check if driver is approaching (within 500m of pickup)
+  useEffect(() => {
+    if (!trackedDriverLocation || !lastBookingId || lastBookingStatus !== "confirmed") {
+      setDriverApproaching(false);
+      return;
+    }
+
+    // Simple distance check using Haversine
+    const R = 6371000; // Earth radius in meters
+    const dLat = ((trackedDriverLocation.latitude - (location?.coords.latitude || 0)) * Math.PI) / 180;
+    const dLon = ((trackedDriverLocation.longitude - (location?.coords.longitude || 0)) * Math.PI) / 180;
+    const a = Math.sin(dLat / 2) ** 2 + Math.cos((location?.coords.latitude || 0) * Math.PI / 180) * Math.cos(trackedDriverLocation.latitude * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
+    const distance = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    setDriverApproaching(distance < 500);
+  }, [trackedDriverLocation, lastBookingId, lastBookingStatus, location]);
+
   const handleSubmitRating = useCallback(async () => {
     if (!tripToRate || !user?.uid || ratingValue === 0) return;
     setSubmittingRating(true);
@@ -416,10 +450,32 @@ export default function PassengerMapScreen() {
           </ScrollView>
         </View>
 
-        {/* ---- Booking status banner ---- */}
+        {/* ---- Driver approaching notification ---- */}
+        {driverApproaching && lastBookingStatus === "confirmed" && (
+          <View style={[styles.approachingBanner, { top: 240 }]}>
+            <MaterialCommunityIcons name="bus-alert" size={18} color={COLORS.success} />
+            <AppText variant="caption" style={styles.approachingText}>
+              Your driver is approaching! Get ready.
+            </AppText>
+          </View>
+        )}
+
+        {/* ---- Bus stop warning after booking ---- */}
+        {lastBookingId && (lastBookingStatus === "pending" || lastBookingStatus === "confirmed") && !driverApproaching && (
+          <View style={[styles.busStopBanner, { top: driverApproaching ? 290 : 240 }]}>
+            <MaterialCommunityIcons name="bus-stop" size={18} color={COLORS.primary} />
+            <AppText variant="caption" style={styles.busStopText}>
+              Please stand by the nearest bus stop for easy pickup.
+            </AppText>
+          </View>
+        )}
+
+        {/* ---- Booking status banner + edit seats ---- */}
         {lastBookingId && lastBookingStatus && (
+          <>
           <View style={[
             styles.bookingBanner,
+            { top: (driverApproaching ? 290 : 0) + ((lastBookingStatus === "pending" || lastBookingStatus === "confirmed") && !driverApproaching ? 50 : 0) + 240 },
             lastBookingStatus === "confirmed" && styles.bookingBannerSuccess,
             lastBookingStatus === "cancelled" && styles.bookingBannerError,
           ]}>
@@ -438,21 +494,62 @@ export default function PassengerMapScreen() {
             />
             <AppText variant="caption" style={styles.bookingBannerText}>
               {lastBookingStatus === "confirmed"
-                ? "Booking confirmed! Your driver is on the way."
+                ? `Booking confirmed! ${bookingSeats} seat${bookingSeats > 1 ? 's' : ''} reserved.${remainingSeats !== null ? ` ${remainingSeats} seat${remainingSeats !== 1 ? 's' : ''} remaining.` : ''} Your driver is on the way.`
                 : lastBookingStatus === "cancelled"
                   ? "Booking declined. The driver could not take this booking."
                   : "Booking pending — waiting for driver to confirm..."}
             </AppText>
             {(lastBookingStatus === "pending" || lastBookingStatus === "confirmed") && (
-              <Pressable
-                style={styles.cancelBookingBtn}
-                onPress={() => void handleCancelBooking()}
-                disabled={cancellingBooking}
-              >
-                <MaterialCommunityIcons name="close" size={14} color={COLORS.danger} />
-              </Pressable>
+              <View style={styles.bannerActions}>
+                <Pressable
+                  style={styles.editSeatsBtn}
+                  onPress={() => setEditingSeats(!editingSeats)}
+                >
+                  <MaterialCommunityIcons name="pencil" size={12} color={COLORS.primary} />
+                </Pressable>
+                <Pressable
+                  style={styles.cancelBookingBtn}
+                  onPress={() => void handleCancelBooking()}
+                  disabled={cancellingBooking}
+                >
+                  <MaterialCommunityIcons name="close" size={14} color={COLORS.danger} />
+                </Pressable>
+              </View>
             )}
           </View>
+
+          {/* Edit seats inline */}
+          {editingSeats && lastBookingStatus !== "cancelled" && (
+            <View style={styles.editSeatsRow}>
+              <AppText variant="caption" style={styles.editSeatsLabel}>Seats:</AppText>
+              <Pressable
+                style={styles.seatEditBtn}
+                onPress={() => { if (bookingSeats > 1) setBookingSeats(bookingSeats - 1); }}
+              >
+                <MaterialCommunityIcons name="minus" size={16} color={COLORS.primary} />
+              </Pressable>
+              <AppText variant="heading" style={styles.seatEditText}>{bookingSeats}</AppText>
+              <Pressable
+                style={styles.seatEditBtn}
+                onPress={() => { if (bookingSeats < 5) setBookingSeats(bookingSeats + 1); }}
+              >
+                <MaterialCommunityIcons name="plus" size={16} color={COLORS.primary} />
+              </Pressable>
+              <Pressable
+                style={styles.seatSaveBtn}
+                onPress={() => {
+                  if (lastBookingId) {
+                    void updateDoc(doc(db, "bookings", lastBookingId), { seats: bookingSeats });
+                  }
+                  setEditingSeats(false);
+                  showToast("success", "Updated", `${bookingSeats} seat${bookingSeats > 1 ? 's' : ''} reserved.`);
+                }}
+              >
+                <AppText variant="caption" style={styles.seatSaveText}>Save</AppText>
+              </Pressable>
+            </View>
+          )}
+          </>
         )}
 
         {/* ---- Loading indicator for trips ---- */}
@@ -726,6 +823,52 @@ const styles = StyleSheet.create({
     color: COLORS.white,
   },
 
+  // Driver approaching
+  approachingBanner: {
+    position: "absolute",
+    top: 240,
+    left: SPACING.md,
+    right: SPACING.md,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+    padding: SPACING.md,
+    borderRadius: 14,
+    backgroundColor: COLORS.success + "15",
+    borderWidth: 1,
+    borderColor: COLORS.success + "40",
+    zIndex: 10,
+  },
+  approachingText: {
+    flex: 1,
+    color: COLORS.success,
+    fontSize: 13,
+    fontWeight: "700",
+  },
+
+  // Bus stop banner
+  busStopBanner: {
+    position: "absolute",
+    top: 240,
+    left: SPACING.md,
+    right: SPACING.md,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+    padding: SPACING.md,
+    borderRadius: 14,
+    backgroundColor: COLORS.blueWash,
+    borderWidth: 1,
+    borderColor: COLORS.primary + "30",
+  },
+  busStopText: {
+    flex: 1,
+    color: COLORS.primary,
+    fontSize: 12,
+    lineHeight: 16,
+    fontWeight: "600",
+  },
+
   // Booking banner
   bookingBannerSuccess: {
     borderLeftWidth: 3,
@@ -758,6 +901,19 @@ const styles = StyleSheet.create({
     fontSize: 12,
     lineHeight: 16,
   },
+  bannerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  editSeatsBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.blueWash,
+  },
   cancelBookingBtn: {
     width: 28,
     height: 28,
@@ -765,6 +921,52 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#FEE2E2",
+  },
+  editSeatsRow: {
+    position: "absolute",
+    top: 290,
+    left: SPACING.md,
+    right: SPACING.md,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+    padding: SPACING.sm,
+    borderRadius: 12,
+    backgroundColor: COLORS.white,
+    shadowColor: COLORS.navy,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  editSeatsLabel: {
+    color: COLORS.textSecondary,
+    fontWeight: "600",
+  },
+  seatEditBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.veryLightBlue,
+  },
+  seatEditText: {
+    color: COLORS.navy,
+    fontSize: 16,
+    minWidth: 20,
+    textAlign: "center",
+  },
+  seatSaveBtn: {
+    marginLeft: "auto",
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.xs,
+    borderRadius: 8,
+    backgroundColor: COLORS.primary,
+  },
+  seatSaveText: {
+    color: COLORS.white,
+    fontWeight: "600",
   },
 
   // Loading

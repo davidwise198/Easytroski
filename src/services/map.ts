@@ -290,6 +290,41 @@ export async function getTripBookings(tripId: string) {
 }
 
 /**
+ * Get passenger pickup locations for a driver's active trip.
+ * Returns pickup coordinates + passenger name for map markers.
+ */
+export async function getDriverPickupLocations(
+  driverId: string
+): Promise<Array<{ id: string; latitude: number; longitude: number; passengerName: string; seats: number; status: string }>> {
+  const bookingsQuery = query(
+    collection(db, "bookings"),
+    where("driverId", "==", driverId),
+    where("status", "in", ["pending", "confirmed"]),
+    limit(20)
+  );
+
+  const snapshot = await getDocs(bookingsQuery);
+  const pickups: Array<{ id: string; latitude: number; longitude: number; passengerName: string; seats: number; status: string }> = [];
+
+  for (const doc of snapshot.docs) {
+    const data = doc.data();
+    if (data.pickupLocation?.latitude && data.pickupLocation?.longitude) {
+      const passengerName = await resolveUserName(data.passengerId);
+      pickups.push({
+        id: doc.id,
+        latitude: data.pickupLocation.latitude,
+        longitude: data.pickupLocation.longitude,
+        passengerName,
+        seats: data.seats || 1,
+        status: data.status,
+      });
+    }
+  }
+
+  return pickups;
+}
+
+/**
  * Subscribe to a driver's real-time location updates.
  * Used by passengers to track the driver after booking.
  */

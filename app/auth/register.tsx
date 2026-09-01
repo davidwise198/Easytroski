@@ -17,6 +17,7 @@ import AppText from "../../src/components/ui/AppText";
 import GlassInput from "../../src/components/ui/GlassInput";
 import PrimaryButton from "../../src/components/ui/PrimaryButton";
 import SectionTitle from "../../src/components/ui/SectionTitle";
+import PasswordStrength from "../../src/components/ui/PasswordStrength";
 
 import { SPACING, COLORS } from "../../src/theme";
 import { registerUser, registerWithGoogle } from "../../src/services/auth";
@@ -377,6 +378,8 @@ export default function RegisterScreen() {
             value={password}
             onChangeText={setPassword}
           />
+
+          <PasswordStrength password={password} />
 
           <GlassInput
             placeholder="Confirm password"

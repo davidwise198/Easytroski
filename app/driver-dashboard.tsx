@@ -568,20 +568,6 @@ export default function DriverDashboardScreen() {
           {/* ─── Footer links ─── */}
           <FadeSlideIn delay={420}>
             <Pressable
-              style={styles.footerLink}
-              onPress={() => router.push("/admin-routes")}
-            >
-              <MaterialCommunityIcons
-                name="shield-crown-outline"
-                size={16}
-                color={COLORS.textSecondary}
-              />
-              <AppText variant="caption" style={styles.footerLinkText}>
-                Admin dashboard
-              </AppText>
-            </Pressable>
-
-            <Pressable
               style={({ pressed }) => [
                 styles.signOutBtn,
                 pressed && { opacity: 0.5 },

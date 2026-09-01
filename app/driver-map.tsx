@@ -20,6 +20,7 @@ import { useAuth } from "../src/contexts/AuthContext";
 import {
   subscribeDriverActiveTrip,
   subscribeDriverBookings,
+  getDriverPickupLocations,
 } from "../src/services/map";
 import { getActiveRoutes, startTrip, endTrip, confirmBooking, cancelBooking, updateBookingStatus, updateDriverSeats, incrementDriverSeats, updateDriverLocation } from "../src/services/transport";
 import { COLORS, SPACING } from "../src/theme";
@@ -83,6 +84,8 @@ export default function DriverMapScreen() {
   const [ending, setEnding] = useState(false);
   const [seatCount, setSeatCount] = useState(12);
   const [editingSeats, setEditingSeats] = useState(false);
+  const [pickupLocations, setPickupLocations] = useState<Array<{ id: string; latitude: number; longitude: number; passengerName: string; seats: number; status: string }>>([]);
+  const [selectedPickup, setSelectedPickup] = useState<{ id: string; latitude: number; longitude: number; passengerName: string; seats: number; status: string } | null>(null);
 
   // Real-time location tracking for active trips
   const locationSubscriptionRef =
@@ -118,6 +121,8 @@ export default function DriverMapScreen() {
 
     const unsubscribe = subscribeDriverBookings(user.uid, (updatedBookings) => {
       setBookings(updatedBookings);
+      // Also refresh pickup locations when bookings change
+      getDriverPickupLocations(user.uid).then(setPickupLocations).catch(() => {});
     });
 
     return unsubscribe;
@@ -336,6 +341,25 @@ export default function DriverMapScreen() {
               </View>
             </Marker>
           )}
+
+          {/* Passenger pickup markers */}
+          {pickupLocations.map((pickup) => (
+            <Marker
+              key={pickup.id}
+              coordinate={{ latitude: pickup.latitude, longitude: pickup.longitude }}
+              anchor={{ x: 0.5, y: 1 }}
+              onPress={() => setSelectedPickup(pickup)}
+            >
+              <View style={styles.pickupMarker}>
+                <MaterialCommunityIcons name="account-circle" size={20} color={COLORS.white} />
+              </View>
+              <View style={styles.pickupLabel}>
+                <AppText variant="caption" style={styles.pickupLabelText} numberOfLines={1}>
+                  {pickup.passengerName}
+                </AppText>
+              </View>
+            </Marker>
+          ))}
         </MapView>
 
         {/* ---- Top bar ---- */}
@@ -563,6 +587,35 @@ export default function DriverMapScreen() {
             </ScrollView>
           )}
         </View>
+        {/* ---- Pickup detail bottom sheet ---- */}
+        {selectedPickup && (
+          <View style={styles.pickupSheet}>
+            <View style={styles.handle} />
+            <View style={styles.pickupSheetContent}>
+              <View style={styles.pickupSheetHeader}>
+                <View style={styles.pickupSheetIcon}>
+                  <MaterialCommunityIcons name="account-circle" size={22} color={COLORS.accent} />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <AppText variant="heading" style={styles.pickupSheetName}>
+                    {selectedPickup.passengerName}
+                  </AppText>
+                  <View style={styles.pickupSheetMeta}>
+                    <View style={[styles.pickupStatusBadge, { backgroundColor: selectedPickup.status === "confirmed" ? COLORS.success : COLORS.warning }]}>
+                      <AppText variant="caption" style={styles.pickupStatusText}>
+                        {selectedPickup.status === "confirmed" ? "Confirmed" : "Pending"}
+                      </AppText>
+                    </View>
+                    <AppText variant="caption" style={styles.pickupSeats}>
+                      {selectedPickup.seats} seat{selectedPickup.seats > 1 ? "s" : ""}
+                    </AppText>
+                  </View>
+                </View>
+              </View>
+              <PrimaryButton title="Close" onPress={() => setSelectedPickup(null)} variant="outline" />
+            </View>
+          </View>
+        )}
       </View>
     </AuthGate>
   );
@@ -574,6 +627,41 @@ const styles = StyleSheet.create({
   },
   map: {
     flex: 1,
+  },
+
+  // Pickup marker
+  pickupMarker: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: COLORS.accent,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: COLORS.white,
+    shadowColor: COLORS.navy,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 4,
+  },
+  pickupLabel: {
+    backgroundColor: COLORS.white,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    alignSelf: "center",
+    marginTop: -4,
+    shadowColor: COLORS.navy,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  pickupLabelText: {
+    color: COLORS.navy,
+    fontSize: 10,
+    fontWeight: "600",
   },
 
   // Driver location dot
@@ -934,6 +1022,64 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: COLORS.primary,
+  },
+
+  // Pickup detail sheet
+  pickupSheet: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: COLORS.white,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingBottom: 40,
+    shadowColor: COLORS.navy,
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 16,
+    elevation: 10,
+  },
+  pickupSheetContent: {
+    paddingHorizontal: SPACING.lg,
+  },
+  pickupSheetHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.md,
+    marginBottom: SPACING.md,
+  },
+  pickupSheetIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.blueWash,
+  },
+  pickupSheetName: {
+    color: COLORS.navy,
+    fontSize: 18,
+  },
+  pickupSheetMeta: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+    marginTop: SPACING.xs,
+  },
+  pickupStatusBadge: {
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  pickupStatusText: {
+    color: COLORS.white,
+    fontSize: 10,
+    fontWeight: "600",
+  },
+  pickupSeats: {
+    color: COLORS.textSecondary,
+    fontSize: 11,
   },
 
   endTripButton: {
