@@ -222,9 +222,10 @@ export default function RegisterScreen() {
         vehicleSeatingCapacity: vehicleSeatingCapacity.trim(),
         preferredRoute: preferredRoute.trim(),
       });
-      // The register screen isn't wrapped with AuthGate, so navigate directly.
+      // Manual driver signup already collected all vehicle details —
+      // skip onboarding and go straight to the dashboard.
       if (userRole === "driver") {
-        router.replace("/auth/driver-onboarding");
+        router.replace("/driver-dashboard");
       } else {
         router.replace("/passenger-dashboard");
       }
