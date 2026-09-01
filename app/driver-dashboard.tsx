@@ -25,6 +25,7 @@ import {
   setDriverAvailability,
   startTrip,
   endTrip,
+  updateDriverSeats,
   updateDriverLocation,
 } from "../src/services/transport";
 import { getUserProfile, getPhotoURL } from "../src/services/profile";
@@ -148,6 +149,7 @@ export default function DriverDashboardScreen() {
   const [activeTrip, setActiveTrip] = useState<Trip | null>(null);
   const [ending, setEnding] = useState(false);
   const [profile, setProfile] = useState<Record<string, any> | null>(null);
+  const [seatCount, setSeatCount] = useState(12);
 
   // Fetch user profile
   useEffect(() => {
@@ -258,7 +260,7 @@ export default function DriverDashboardScreen() {
 
     setStarting(true);
     try {
-      const tripId = await startTrip(driverId, selectedRouteId, "going", 12);
+      const tripId = await startTrip(driverId, selectedRouteId, "going", seatCount);
       setActiveTrip({
         id: tripId,
         driverId,
@@ -290,6 +292,18 @@ export default function DriverDashboardScreen() {
       showToast("error", "Failed", "Could not end trip. Try again.");
     } finally {
       setEnding(false);
+    }
+  };
+
+  const handleUpdateSeats = async (newCount: number) => {
+    const driverId = user?.uid;
+    if (!driverId) return;
+    const clamped = Math.max(0, Math.min(30, newCount));
+    setSeatCount(clamped);
+    try {
+      await updateDriverSeats(driverId, clamped);
+    } catch {
+      showToast("error", "Failed", "Could not update seat count.");
     }
   };
 
@@ -511,6 +525,33 @@ export default function DriverDashboardScreen() {
               </View>
             )}
           </FadeSlideIn>
+
+          {/* ─── Seat counter ─── */}
+          {!activeTrip && (
+            <FadeSlideIn delay={360}>
+              <View style={styles.seatCounterCard}>
+                <View style={styles.seatCounterLeft}>
+                  <MaterialCommunityIcons name="seat" size={20} color={COLORS.primary} />
+                  <AppText variant="heading" style={styles.seatCounterLabel}>Available seats</AppText>
+                </View>
+                <View style={styles.seatCounterControls}>
+                  <Pressable
+                    style={styles.seatBtn}
+                    onPress={() => void handleUpdateSeats(seatCount - 1)}
+                  >
+                    <MaterialCommunityIcons name="minus" size={18} color={COLORS.primary} />
+                  </Pressable>
+                  <AppText variant="heading" style={styles.seatCountText}>{seatCount}</AppText>
+                  <Pressable
+                    style={styles.seatBtn}
+                    onPress={() => void handleUpdateSeats(seatCount + 1)}
+                  >
+                    <MaterialCommunityIcons name="plus" size={18} color={COLORS.primary} />
+                  </Pressable>
+                </View>
+              </View>
+            </FadeSlideIn>
+          )}
 
           {/* ─── Start trip button ─── */}
           <FadeSlideIn delay={380}>
@@ -765,7 +806,50 @@ const styles = StyleSheet.create({
     fontSize: 12,
   },
 
-  startButton: { marginTop: SPACING.xl, marginBottom: SPACING.md },
+  startButton: { marginTop: SPACING.lg, marginBottom: SPACING.md },
+
+  /* ── Seat counter ── */
+  seatCounterCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    padding: SPACING.md,
+    borderRadius: 18,
+    backgroundColor: COLORS.blueWash,
+    borderWidth: 1,
+    borderColor: COLORS.veryLightBlue,
+    marginBottom: SPACING.sm,
+  },
+  seatCounterLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+  },
+  seatCounterLabel: {
+    color: COLORS.navy,
+    fontSize: 15,
+  },
+  seatCounterControls: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.md,
+  },
+  seatBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.veryLightBlue,
+  },
+  seatCountText: {
+    color: COLORS.navy,
+    fontSize: 24,
+    minWidth: 36,
+    textAlign: "center",
+  },
 
   /* ── Footer ── */
   footerLink: {

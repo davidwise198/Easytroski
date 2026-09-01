@@ -1,10 +1,11 @@
-import React, { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
+  TextInput,
   View,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -15,6 +16,7 @@ import AppText from "../src/components/ui/AppText";
 import PrimaryButton from "../src/components/ui/PrimaryButton";
 import AuthGate from "../src/components/AuthGate";
 import { getActiveRoutes } from "../src/services/transport";
+import { getRouteAvailableSeats } from "../src/services/map";
 import { COLORS, SPACING } from "../src/theme";
 import { Route } from "../src/types/models";
 
@@ -24,6 +26,8 @@ export default function RoutesScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expandedRouteId, setExpandedRouteId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [seatData, setSeatData] = useState<Record<string, { totalSeats: number; totalCapacity: number; tripCount: number }>>({});
 
   const loadRoutes = useCallback(async (isRefresh = false) => {
     if (isRefresh) {
@@ -34,7 +38,19 @@ export default function RoutesScreen() {
     setError(null);
 
     try {
-      setRoutes(await getActiveRoutes());
+      const activeRoutes = await getActiveRoutes();
+      setRoutes(activeRoutes);
+
+      // Load seat availability for each route
+      const seatMap: Record<string, { totalSeats: number; totalCapacity: number; tripCount: number }> = {};
+      await Promise.all(
+        activeRoutes.map(async (route) => {
+          try {
+            seatMap[route.id] = await getRouteAvailableSeats(route.id);
+          } catch { /* best-effort */ }
+        })
+      );
+      setSeatData(seatMap);
     } catch (loadError) {
       console.error("Route loading error:", loadError);
       setError("We could not load routes right now. Please try again.");
@@ -51,6 +67,18 @@ export default function RoutesScreen() {
   const toggleRoute = (routeId: string) => {
     setExpandedRouteId(expandedRouteId === routeId ? null : routeId);
   };
+
+  // Live search filtering
+  const filteredRoutes = useMemo(() => {
+    if (!searchQuery.trim()) return routes;
+    const q = searchQuery.toLowerCase().trim();
+    return routes.filter(
+      (route) =>
+        route.origin.toLowerCase().includes(q) ||
+        route.destination.toLowerCase().includes(q) ||
+        route.stops.some((stop) => stop.toLowerCase().includes(q))
+    );
+  }, [routes, searchQuery]);
 
   return (
     <AuthGate>
@@ -94,8 +122,36 @@ export default function RoutesScreen() {
             </AppText>
           </View>
         ) : (
+          <>
+          {/* Search bar */}
+          <View style={styles.searchBar}>
+            <MaterialCommunityIcons name="magnify" size={20} color={COLORS.textSecondary} />
+            <TextInput
+              style={styles.searchInput}
+              placeholder="Search routes..."
+              placeholderTextColor={COLORS.textSecondary}
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+              autoCorrect={false}
+            />
+            {searchQuery.length > 0 && (
+              <Pressable onPress={() => setSearchQuery("")}>
+                <MaterialCommunityIcons name="close-circle" size={18} color={COLORS.textSecondary} />
+              </Pressable>
+            )}
+          </View>
+
+          {filteredRoutes.length === 0 ? (
+            <View style={styles.stateContainer}>
+              <MaterialCommunityIcons name="magnify-close" size={38} color={COLORS.textSecondary} />
+              <AppText variant="heading" style={styles.stateTitle}>No routes found</AppText>
+              <AppText variant="body" style={styles.stateText}>
+                Try a different search term.
+              </AppText>
+            </View>
+          ) : (
           <View style={styles.routeList}>
-            {routes.map((route) => {
+            {filteredRoutes.map((route) => {
               const isExpanded = expandedRouteId === route.id;
               const allStops = [route.origin, ...route.stops, route.destination];
 
@@ -116,9 +172,16 @@ export default function RoutesScreen() {
                       <AppText variant="heading" style={styles.routeTitle}>
                         {route.origin} → {route.destination}
                       </AppText>
-                      <AppText variant="caption" style={styles.stopsHint}>
-                        {route.stops.length} {route.stops.length === 1 ? "stop" : "stops"} along the way
-                      </AppText>
+                      <View style={styles.routeMetaRow}>
+                        <AppText variant="caption" style={styles.stopsHint}>
+                          {route.stops.length} {route.stops.length === 1 ? "stop" : "stops"}
+                        </AppText>
+                        {seatData[route.id] && (
+                          <AppText variant="caption" style={styles.seatsHint}>
+                            {seatData[route.id].totalSeats}/{seatData[route.id].totalCapacity} seats · {seatData[route.id].tripCount} {seatData[route.id].tripCount === 1 ? "driver" : "drivers"}
+                          </AppText>
+                        )}
+                      </View>
                     </View>
                     <MaterialCommunityIcons
                       name={isExpanded ? "chevron-up" : "chevron-down"}
@@ -172,6 +235,8 @@ export default function RoutesScreen() {
               );
             })}
           </View>
+          )}
+          </>
         )}
 
         <PrimaryButton title="Back to dashboard" onPress={() => router.back()} variant="outline" style={styles.backButton} />
@@ -217,6 +282,24 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     backgroundColor: COLORS.blueWash,
   },
+  searchBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm + 2,
+    borderRadius: 16,
+    backgroundColor: COLORS.veryLightBlue,
+    borderWidth: 1,
+    borderColor: COLORS.blueWash,
+    marginBottom: SPACING.lg,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 15,
+    color: COLORS.navy,
+    paddingVertical: SPACING.xs,
+  },
   routeList: {
     gap: SPACING.md,
   },
@@ -258,9 +341,19 @@ const styles = StyleSheet.create({
     fontSize: 16,
     lineHeight: 22,
   },
+  routeMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+    marginTop: 2,
+    flexWrap: "wrap",
+  },
   stopsHint: {
     color: "rgba(255,255,255,0.55)",
-    marginTop: 2,
+  },
+  seatsHint: {
+    color: COLORS.accent,
+    fontWeight: "600",
   },
 
   /* ── Expanded detail ── */

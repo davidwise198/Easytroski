@@ -19,9 +19,9 @@ import { useLocation } from "../src/contexts/LocationContext";
 import { useAuth } from "../src/contexts/AuthContext";
 import {
   subscribeDriverActiveTrip,
-  getDriverActiveBookings,
+  subscribeDriverBookings,
 } from "../src/services/map";
-import { getActiveRoutes, startTrip, endTrip, confirmBooking, cancelBooking, updateBookingStatus, incrementDriverSeats, updateDriverLocation } from "../src/services/transport";
+import { getActiveRoutes, startTrip, endTrip, confirmBooking, cancelBooking, updateBookingStatus, updateDriverSeats, incrementDriverSeats, updateDriverLocation } from "../src/services/transport";
 import { COLORS, SPACING } from "../src/theme";
 import { Route, Trip, TripStatus } from "../src/types/models";
 import { showToast } from "../src/utils/toast";
@@ -79,9 +79,10 @@ export default function DriverMapScreen() {
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
   const [activeTrip, setActiveTrip] = useState<Trip | null>(null);
   const [bookings, setBookings] = useState<any[]>([]);
-  const [loadingBookings, setLoadingBookings] = useState(false);
   const [starting, setStarting] = useState(false);
   const [ending, setEnding] = useState(false);
+  const [seatCount, setSeatCount] = useState(12);
+  const [editingSeats, setEditingSeats] = useState(false);
 
   // Real-time location tracking for active trips
   const locationSubscriptionRef =
@@ -108,18 +109,18 @@ export default function DriverMapScreen() {
     return unsubscribe;
   }, [user?.uid]);
 
-  // Load bookings for active trip
+  // Real-time bookings subscription when trip is active
   useEffect(() => {
     if (!activeTrip || !user?.uid) {
       setBookings([]);
       return;
     }
 
-    setLoadingBookings(true);
-    getDriverActiveBookings(user.uid)
-      .then(setBookings)
-      .catch((error) => console.error("Failed to load bookings:", error))
-      .finally(() => setLoadingBookings(false));
+    const unsubscribe = subscribeDriverBookings(user.uid, (updatedBookings) => {
+      setBookings(updatedBookings);
+    });
+
+    return unsubscribe;
   }, [activeTrip, user?.uid]);
 
   // Location tracking when trip is active
@@ -190,7 +191,7 @@ export default function DriverMapScreen() {
 
     setStarting(true);
     try {
-      await startTrip(driverId, selectedRouteId, "going");
+      await startTrip(driverId, selectedRouteId, "going", seatCount);
     } catch (error) {
       console.error("Trip start error:", error);
       showToast("error", "Trip start failed", "Could not start trip. Please try again.");
@@ -272,6 +273,22 @@ export default function DriverMapScreen() {
       }
     },
     []
+  );
+
+  const handleUpdateSeats = useCallback(
+    async (newCount: number) => {
+      const driverId = user?.uid;
+      if (!driverId) return;
+      const clamped = Math.max(0, Math.min(30, newCount));
+      setSeatCount(clamped);
+      try {
+        await updateDriverSeats(driverId, clamped);
+        showToast("success", "Seats updated", `${clamped} seats available.`);
+      } catch {
+        showToast("error", "Failed", "Could not update seat count.");
+      }
+    },
+    [user?.uid]
   );
 
   const handleSignOut = useCallback(async () => {
@@ -441,14 +458,32 @@ export default function DriverMapScreen() {
                 </AppText>
               </View>
 
+              {/* Seat counter */}
+              <View style={styles.seatCounterRow}>
+                <AppText variant="caption" style={styles.sectionLabel}>AVAILABLE SEATS</AppText>
+                <View style={styles.seatCounterControls}>
+                  <Pressable
+                    style={styles.seatBtn}
+                    onPress={() => handleUpdateSeats(seatCount - 1)}
+                  >
+                    <MaterialCommunityIcons name="minus" size={18} color={COLORS.primary} />
+                  </Pressable>
+                  <AppText variant="heading" style={styles.seatCountText}>{seatCount}</AppText>
+                  <Pressable
+                    style={styles.seatBtn}
+                    onPress={() => handleUpdateSeats(seatCount + 1)}
+                  >
+                    <MaterialCommunityIcons name="plus" size={18} color={COLORS.primary} />
+                  </Pressable>
+                </View>
+              </View>
+
               {/* Bookings list */}
               <View style={styles.bookingsSection}>
                 <AppText variant="caption" style={styles.sectionLabel}>
                   PASSENGER BOOKINGS ({bookings.length})
                 </AppText>
-                {loadingBookings ? (
-                  <ActivityIndicator color={COLORS.primary} style={{ paddingVertical: SPACING.md }} />
-                ) : bookings.length === 0 ? (
+                {bookings.length === 0 ? (
                   <View style={styles.emptyBookings}>
                     <MaterialCommunityIcons name="account-clock-outline" size={28} color={COLORS.textSecondary} />
                     <AppText variant="body" style={styles.emptyText}>
@@ -463,7 +498,10 @@ export default function DriverMapScreen() {
                       </View>
                       <View style={styles.bookingCopy}>
                         <AppText variant="heading" style={styles.bookingTitle}>
-                          {booking.pickupLocation?.address || "Pickup point"}
+                          {booking.passengerName || "Passenger"}
+                        </AppText>
+                        <AppText variant="caption" style={styles.bookingSubtitle}>
+                          {booking.pickupLocation?.address || "Pickup"} → {booking.dropOffLocation?.address || "Drop-off"}
                         </AppText>
                         <AppText variant="caption" style={styles.bookingSubtitle}>
                           → {booking.dropOffLocation?.address || "Drop-off point"}
@@ -772,6 +810,39 @@ const styles = StyleSheet.create({
   trackingText: {
     color: COLORS.textSecondary,
     fontSize: 11,
+  },
+
+  // Seat counter
+  seatCounterRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: SPACING.md,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    borderRadius: 14,
+    backgroundColor: COLORS.veryLightBlue,
+  },
+  seatCounterControls: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.md,
+  },
+  seatBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.white,
+    borderWidth: 1,
+    borderColor: COLORS.veryLightBlue,
+  },
+  seatCountText: {
+    color: COLORS.navy,
+    fontSize: 22,
+    minWidth: 30,
+    textAlign: "center",
   },
 
   // Bookings

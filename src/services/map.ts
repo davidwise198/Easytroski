@@ -10,6 +10,41 @@ import {
 } from "firebase/firestore";
 
 import { db } from "./firebase";
+
+// ---------------------------------------------------------------------------
+// User name cache — avoids repeated Firestore reads for the same driver
+// ---------------------------------------------------------------------------
+const userNameCache = new Map<string, string>();
+
+async function resolveUserName(userId: string): Promise<string> {
+  const cached = userNameCache.get(userId);
+  if (cached) return cached;
+
+  try {
+    const userDoc = await getDoc(doc(db, "users", userId));
+    if (userDoc.exists()) {
+      const name = userDoc.data().name || userDoc.data().displayName || "";
+      if (name) {
+        userNameCache.set(userId, name);
+        return name;
+      }
+    }
+  } catch { /* best-effort */ }
+
+  // Fallback: try drivers collection
+  try {
+    const driverDoc = await getDoc(doc(db, "drivers", userId));
+    if (driverDoc.exists()) {
+      const name = driverDoc.data().name || "";
+      if (name) {
+        userNameCache.set(userId, name);
+        return name;
+      }
+    }
+  } catch { /* best-effort */ }
+
+  return "Driver";
+}
 import {
   ActiveTripMarker,
   Driver,
@@ -79,12 +114,12 @@ export async function getActiveTripMarkers(
       if (routeDoc.exists()) {
         routeData = { id: routeDoc.id, ...routeDoc.data() } as Route;
       }
-    }
+    }      const driverName = await resolveUserName(trip.driverId);
 
-    markers.push({
+      markers.push({
       trip: {
         ...trip,
-        driverName: driver.userId,
+        driverName,
         vehiclePlate: vehicle?.numberPlate,
         vehicleColor: vehicle?.color,
         vehicleBrand: vehicle?.brand,
@@ -144,10 +179,12 @@ export function subscribeActiveTripMarkers(
         }
       }
 
+      const driverName = await resolveUserName(trip.driverId);
+
       markers.push({
         trip: {
           ...trip,
-          driverName: driver.userId,
+          driverName,
           vehiclePlate: vehicle?.numberPlate,
           vehicleColor: vehicle?.color,
           vehicleBrand: vehicle?.brand,
@@ -275,8 +312,36 @@ export function subscribeDriverLocation(
 }
 
 /**
- * Get bookings by driverId for their active trip.
- * This works with the current schema where bookings reference driverId directly.
+ * Subscribe to a driver's active bookings in real-time.
+ * Resolves passenger names from the users collection.
+ */
+export function subscribeDriverBookings(
+  driverId: string,
+  onUpdate: (bookings: any[]) => void
+): () => void {
+  const bookingsQuery = query(
+    collection(db, "bookings"),
+    where("driverId", "==", driverId),
+    where("status", "in", ["pending", "confirmed", "completed"]),
+    limit(20)
+  );
+
+  return onSnapshot(bookingsQuery, async (snapshot) => {
+    const bookings = await Promise.all(
+      snapshot.docs.map(async (d) => {
+        const data = d.data();
+        const passengerName = data.passengerId
+          ? await resolveUserName(data.passengerId)
+          : "Passenger";
+        return { id: d.id, ...data, passengerName };
+      })
+    );
+    onUpdate(bookings);
+  });
+}
+
+/**
+ * Get bookings by driverId for their active trip (one-time fetch fallback).
  */
 export async function getDriverActiveBookings(driverId: string) {
   const bookingsQuery = query(
@@ -288,4 +353,34 @@ export async function getDriverActiveBookings(driverId: string) {
 
   const snapshot = await getDocs(bookingsQuery);
   return snapshot.docs.map((d) => ({ id: d.id, ...d.data() }));
+}
+
+/**
+ * Get total available seats across all active trips for a specific route.
+ * Used on the passenger route list to show seat availability.
+ */
+export async function getRouteAvailableSeats(routeId: string): Promise<{ totalSeats: number; totalCapacity: number; tripCount: number }> {
+  const statuses = ["online", "boarding", "in_progress"];
+  const tripQuery = query(
+    collection(db, "trips"),
+    where("routeId", "==", routeId),
+    where("status", "in", statuses),
+    limit(20)
+  );
+
+  const snapshot = await getDocs(tripQuery);
+  let totalSeats = 0;
+  let totalCapacity = 0;
+
+  for (const tripDoc of snapshot.docs) {
+    const trip = tripDoc.data();
+    const driverDoc = await getDoc(doc(db, "drivers", trip.driverId));
+    if (driverDoc.exists()) {
+      const driver = driverDoc.data();
+      totalSeats += driver.availableSeats ?? 0;
+      totalCapacity += driver.vehicleCapacity ?? 12;
+    }
+  }
+
+  return { totalSeats, totalCapacity, tripCount: snapshot.size };
 }

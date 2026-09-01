@@ -417,17 +417,31 @@ export default function PassengerMapScreen() {
         </View>
 
         {/* ---- Booking status banner ---- */}
-        {lastBookingId && lastBookingStatus && lastBookingStatus !== "cancelled" && (
-          <View style={styles.bookingBanner}>
+        {lastBookingId && lastBookingStatus && (
+          <View style={[
+            styles.bookingBanner,
+            lastBookingStatus === "confirmed" && styles.bookingBannerSuccess,
+            lastBookingStatus === "cancelled" && styles.bookingBannerError,
+          ]}>
             <MaterialCommunityIcons
-              name={lastBookingStatus === "confirmed" ? "check-circle" : "clock-outline"}
+              name={
+                lastBookingStatus === "confirmed" ? "check-circle" :
+                lastBookingStatus === "cancelled" ? "close-circle" :
+                "clock-outline"
+              }
               size={18}
-              color={lastBookingStatus === "confirmed" ? COLORS.success : COLORS.warning}
+              color={
+                lastBookingStatus === "confirmed" ? COLORS.success :
+                lastBookingStatus === "cancelled" ? COLORS.danger :
+                COLORS.warning
+              }
             />
             <AppText variant="caption" style={styles.bookingBannerText}>
               {lastBookingStatus === "confirmed"
                 ? "Booking confirmed! Your driver is on the way."
-                : "Booking pending — waiting for driver to confirm..."}
+                : lastBookingStatus === "cancelled"
+                  ? "Booking declined. The driver could not take this booking."
+                  : "Booking pending — waiting for driver to confirm..."}
             </AppText>
             {(lastBookingStatus === "pending" || lastBookingStatus === "confirmed") && (
               <Pressable
@@ -713,6 +727,14 @@ const styles = StyleSheet.create({
   },
 
   // Booking banner
+  bookingBannerSuccess: {
+    borderLeftWidth: 3,
+    borderLeftColor: COLORS.success,
+  },
+  bookingBannerError: {
+    borderLeftWidth: 3,
+    borderLeftColor: COLORS.danger,
+  },
   bookingBanner: {
     position: "absolute",
     top: 240,

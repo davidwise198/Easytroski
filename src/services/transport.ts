@@ -291,6 +291,16 @@ export const incrementDriverSeats = async (driverId: string) => {
   });
 };
 
+/**
+ * Directly set the driver's available seat count.
+ * Called by the driver to adjust capacity at any time.
+ */
+export const updateDriverSeats = async (driverId: string, seats: number) => {
+  await updateDoc(doc(db, "drivers", driverId), {
+    availableSeats: Math.max(0, seats),
+  });
+};
+
 export const updateDriverLocation = async (
   driverId: string,
   latitude: number,
