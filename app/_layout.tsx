@@ -4,6 +4,7 @@ import * as SplashScreen from "expo-splash-screen";
 
 import AuthProvider, { useAuth } from "../src/contexts/AuthContext";
 import LocationProvider from "../src/contexts/LocationContext";
+import ThemeProvider from "../src/contexts/ThemeContext";
 import { ToastProvider } from "../src/contexts/ToastContext";
 import ErrorBoundary from "../src/components/ui/ErrorBoundary";
 import AppIntro from "../src/components/ui/AppIntro";
@@ -37,13 +38,15 @@ function RootLayoutNav() {
 export default function RootLayout() {
   return (
     <ErrorBoundary>
-      <AuthProvider>
-        <LocationProvider>
-          <ToastProvider>
-            <RootLayoutNav />
-          </ToastProvider>
-        </LocationProvider>
-      </AuthProvider>
+      <ThemeProvider>
+        <AuthProvider>
+          <LocationProvider>
+            <ToastProvider>
+              <RootLayoutNav />
+            </ToastProvider>
+          </LocationProvider>
+        </AuthProvider>
+      </ThemeProvider>
     </ErrorBoundary>
   );
 }

@@ -5,7 +5,8 @@ import {
   StyleSheet,
 } from "react-native";
 
-import { TYPOGRAPHY, COLORS } from "../../theme";
+import { TYPOGRAPHY } from "../../theme";
+import { useThemeColors } from "../../contexts/ThemeContext";
 
 
 interface AppTextProps extends TextProps {
@@ -20,47 +21,33 @@ interface AppTextProps extends TextProps {
 
 
 export default function AppText({
-
   variant = "body",
-
   style,
-
   children,
-
   ...props
-
 }: AppTextProps) {
-
+  const { colors } = useThemeColors();
 
   return (
-
     <Text
-
       style={[
         styles.base,
         TYPOGRAPHY[variant],
+        { color: colors.text },
         style,
       ]}
-
       {...props}
-
     >
-
       {children}
-
     </Text>
-
   );
-
 }
 
 
 const styles = StyleSheet.create({
 
   base: {
-
-    color: COLORS.text,
-
+    color: "#102A43",
   },
 
 });

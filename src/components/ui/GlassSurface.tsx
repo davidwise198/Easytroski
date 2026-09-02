@@ -5,7 +5,7 @@ import {
   ViewProps,
 } from "react-native";
 
-import { COLORS } from "../../theme";
+import { useThemeColors } from "../../contexts/ThemeContext";
 
 interface GlassSurfaceProps extends ViewProps {
   children: React.ReactNode;
@@ -17,11 +17,17 @@ export default function GlassSurface({
   style,
   ...props
 }: GlassSurfaceProps) {
+  const { colors } = useThemeColors();
 
   return (
     <View
       style={[
         styles.container,
+        {
+          borderColor: colors.glassBorder,
+          backgroundColor: colors.glass,
+          shadowColor: colors.navy,
+        },
         style,
       ]}
       {...props}
@@ -40,9 +46,6 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: COLORS.glassBorder,
-    backgroundColor: COLORS.glass,
-    shadowColor: COLORS.navy,
     shadowOffset: {
       width: 0,
       height: 12,

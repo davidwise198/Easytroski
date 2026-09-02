@@ -4,7 +4,7 @@ import { router } from "expo-router";
 
 import { useAuth } from "../contexts/AuthContext";
 import { UserRole } from "../types/models";
-import { COLORS } from "../theme";
+import { useThemeColors } from "../contexts/ThemeContext";
 
 type AuthGateProps = {
   children: React.ReactNode;
@@ -13,6 +13,7 @@ type AuthGateProps = {
 
 export default function AuthGate({ children, allowedRoles }: AuthGateProps) {
   const { user, userRole, loading } = useAuth();
+  const { colors } = useThemeColors();
 
   useEffect(() => {
     if (loading) return;
@@ -39,8 +40,8 @@ export default function AuthGate({ children, allowedRoles }: AuthGateProps) {
 
   if (loading) {
     return (
-      <View style={styles.loader}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+      <View style={[styles.loader, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -48,8 +49,8 @@ export default function AuthGate({ children, allowedRoles }: AuthGateProps) {
   // While navigation is in progress, show a loader
   if (!user || !userRole || (allowedRoles && !allowedRoles.includes(userRole))) {
     return (
-      <View style={styles.loader}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+      <View style={[styles.loader, { backgroundColor: colors.background }]}>
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -62,6 +63,5 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: COLORS.background,
   },
 });

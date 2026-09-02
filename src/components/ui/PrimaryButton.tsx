@@ -6,7 +6,8 @@ import {
   ViewStyle,
 } from "react-native";
 
-import { COLORS, SPACING } from "../../theme";
+import { SPACING } from "../../theme";
+import { useThemeColors } from "../../contexts/ThemeContext";
 
 type ButtonVariant = "primary" | "secondary" | "outline";
 
@@ -25,19 +26,32 @@ export default function PrimaryButton({
   variant = "primary",
   style,
 }: PrimaryButtonProps) {
+  const { colors } = useThemeColors();
+
+  const variantStyles = {
+    primary: { backgroundColor: colors.primary },
+    secondary: { backgroundColor: colors.navy },
+    outline: { backgroundColor: "transparent", borderWidth: 2, borderColor: colors.primary },
+  };
+  const textStyles = {
+    primary: { color: "#FFFFFF" as const },
+    secondary: { color: "#FFFFFF" as const },
+    outline: { color: colors.primary },
+  };
+
   return (
     <Pressable
       onPress={onPress}
       disabled={disabled}
       style={({ pressed }) => [
         styles.button,
-        styles[variant],
+        variantStyles[variant],
         pressed && styles.pressed,
         disabled && styles.disabled,
         style,
       ]}
     >
-      <Text style={[styles.text, styles[`text_${variant}`]]}>
+      <Text style={[styles.text, textStyles[variant]]}>
         {title}
       </Text>
     </Pressable>
@@ -61,35 +75,9 @@ const styles = StyleSheet.create({
     elevation: 6,
   },
 
-  primary: {
-    backgroundColor: COLORS.primary,
-  },
-
-  secondary: {
-    backgroundColor: COLORS.navy,
-  },
-
-  outline: {
-    backgroundColor: "transparent",
-    borderWidth: 2,
-    borderColor: COLORS.primary,
-  },
-
   text: {
     fontSize: 16,
     fontWeight: "600",
-  },
-
-  text_primary: {
-    color: "#FFFFFF",
-  },
-
-  text_secondary: {
-    color: "#FFFFFF",
-  },
-
-  text_outline: {
-    color: COLORS.primary,
   },
 
   pressed: {

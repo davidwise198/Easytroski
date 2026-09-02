@@ -1,7 +1,11 @@
 import { initializeApp } from "firebase/app";
-import { getAuth } from "firebase/auth";
+// @ts-expect-error — getReactNativePersistence is exported at runtime by the
+// React Native build of @firebase/auth but missing from the public TS types.
+// See https://github.com/firebase/firebase-js-sdk/issues/9316
+import { initializeAuth, getReactNativePersistence } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 // ---------------------------------------------------------------------------
 // Firebase configuration — loaded from environment variables.
@@ -34,8 +38,11 @@ if (missingKeys.length > 0 && __DEV__) {
 
 const app = initializeApp(firebaseConfig);
 
-// Firebase Auth — getAuth() persists state automatically in SDK v12+
-// on React Native when @react-native-async-storage is installed.
-export const auth = getAuth(app);
+// Firebase Auth — use initializeAuth with AsyncStorage persistence so the
+// session survives app restarts on React Native. Plain getAuth() defaults to
+// in-memory persistence on React Native, which causes silent logouts.
+export const auth = initializeAuth(app, {
+  persistence: getReactNativePersistence(AsyncStorage),
+});
 export const db = getFirestore(app);
 export const storage = getStorage(app);

@@ -5,7 +5,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "newArchEnabled": false,
     "scheme": "easytroski",
     "description": "EasyTroski is a smart transport platform that connects passengers with available trotro vehicles, enabling convenient seat booking and real-time driver tracking.",
