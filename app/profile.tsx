@@ -16,6 +16,8 @@ import AppText from "../src/components/ui/AppText";
 import GlassInput from "../src/components/ui/GlassInput";
 import PrimaryButton from "../src/components/ui/PrimaryButton";
 import { useAuth } from "../src/contexts/AuthContext";
+import { useThemeColors } from "../src/contexts/ThemeContext";
+import { useMemo } from "react";
 import {
   getUserProfile,
   getPhotoURL,
@@ -28,6 +30,18 @@ import { showToast } from "../src/utils/toast";
 
 export default function ProfileScreen() {
   const { user } = useAuth();
+  const { colors } = useThemeColors();
+  const ds = useMemo(() => ({
+    title: { color: colors.text },
+    fieldLabel: { color: colors.text },
+    fieldValue: { color: colors.textSecondary },
+    photoHint: { color: colors.textSecondary },
+    backBtn: { backgroundColor: colors.blueWash },
+    avatarLarge: { backgroundColor: colors.blueWash },
+    photoPlaceholder: { backgroundColor: colors.blueWash },
+    fieldCard: { backgroundColor: colors.glass, borderColor: colors.glassBorder },
+    divider: { backgroundColor: colors.veryLightBlue },
+  }), [colors]);
   const [profile, setProfile] = useState<Record<string, any> | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -121,11 +135,11 @@ export default function ProfileScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* Back */}
-        <Pressable style={styles.backBtn} onPress={() => router.back()}>
+        <Pressable style={[styles.backBtn, ds.backBtn]} onPress={() => router.back()}>
           <MaterialCommunityIcons name="arrow-left" size={22} color={COLORS.primary} />
         </Pressable>
         <AppText variant="caption" style={styles.eyebrow}>PROFILE</AppText>
-        <AppText variant="title" style={styles.title}>My Account</AppText>
+        <AppText variant="title" style={[styles.title, ds.title]}>My Account</AppText>
 
         {/* Photo */}
         <View style={styles.photoSection}>
@@ -134,7 +148,7 @@ export default function ProfileScreen() {
               {photoURL ? (
                 <Image source={{ uri: photoURL }} style={styles.photo} />
               ) : (
-                <View style={styles.photoPlaceholder}>
+                <View style={[styles.photoPlaceholder, ds.photoPlaceholder]}>
                   <MaterialCommunityIcons name="account" size={48} color={COLORS.primary} />
                 </View>
               )}
@@ -147,7 +161,7 @@ export default function ProfileScreen() {
               </View>
             </View>
           </Pressable>
-          <AppText variant="caption" style={styles.photoHint}>
+          <AppText variant="caption" style={[styles.photoHint, ds.photoHint]}>
             {isGoogleUser && !photoURL
               ? "Using Google profile photo"
               : photoURL
@@ -157,9 +171,9 @@ export default function ProfileScreen() {
         </View>
 
         {/* Name */}
-        <View style={styles.fieldCard}>
+        <View style={[styles.fieldCard, ds.fieldCard]}>
           <View style={styles.fieldHeader}>
-            <AppText variant="heading" style={styles.fieldLabel}>Name</AppText>
+            <AppText variant="heading" style={[styles.fieldLabel, ds.fieldLabel]}>Name</AppText>
             {!editingName ? (
               <Pressable onPress={() => setEditingName(true)}>
                 <MaterialCommunityIcons name="pencil" size={18} color={COLORS.primary} />
@@ -189,31 +203,31 @@ export default function ProfileScreen() {
               </View>
             </View>
           ) : (
-            <AppText variant="body" style={styles.fieldValue}>
+            <AppText variant="body" style={[styles.fieldValue, ds.fieldValue]}>
               {profile?.name || user?.displayName || "Not set"}
             </AppText>
           )}
         </View>
 
         {/* Email */}
-        <View style={styles.fieldCard}>
-          <AppText variant="heading" style={styles.fieldLabel}>Email</AppText>
-          <AppText variant="body" style={styles.fieldValue}>
+        <View style={[styles.fieldCard, ds.fieldCard]}>
+          <AppText variant="heading" style={[styles.fieldLabel, ds.fieldLabel]}>Email</AppText>
+          <AppText variant="body" style={[styles.fieldValue, ds.fieldValue]}>
             {user?.email || "Not set"}
           </AppText>
         </View>
 
         {/* Phone */}
-        <View style={styles.fieldCard}>
-          <AppText variant="heading" style={styles.fieldLabel}>Phone</AppText>
-          <AppText variant="body" style={styles.fieldValue}>
+        <View style={[styles.fieldCard, ds.fieldCard]}>
+          <AppText variant="heading" style={[styles.fieldLabel, ds.fieldLabel]}>Phone</AppText>
+          <AppText variant="body" style={[styles.fieldValue, ds.fieldValue]}>
             {profile?.phone || "Not set"}
           </AppText>
         </View>
 
         {/* Role */}
-        <View style={styles.fieldCard}>
-          <AppText variant="heading" style={styles.fieldLabel}>Role</AppText>
+        <View style={[styles.fieldCard, ds.fieldCard]}>
+          <AppText variant="heading" style={[styles.fieldLabel, ds.fieldLabel]}>Role</AppText>
           <View style={styles.roleBadge}>
             <MaterialCommunityIcons
               name={profile?.role === "driver" ? "steering" : "account"}
@@ -227,9 +241,9 @@ export default function ProfileScreen() {
         </View>
 
         {/* Sign up method */}
-        <View style={styles.fieldCard}>
-          <AppText variant="heading" style={styles.fieldLabel}>Sign-in method</AppText>
-          <AppText variant="body" style={styles.fieldValue}>
+        <View style={[styles.fieldCard, ds.fieldCard]}>
+          <AppText variant="heading" style={[styles.fieldLabel, ds.fieldLabel]}>Sign-in method</AppText>
+          <AppText variant="body" style={[styles.fieldValue, ds.fieldValue]}>
             {isGoogleUser ? "Google" : "Email & password"}
           </AppText>
         </View>

@@ -24,6 +24,8 @@ import {
 } from "../src/services/map";
 import { getActiveRoutes, startTrip, endTrip, confirmBooking, cancelBooking, updateBookingStatus, updateDriverSeats, incrementDriverSeats, updateDriverLocation } from "../src/services/transport";
 import { COLORS, SPACING } from "../src/theme";
+import { useThemeColors } from "../src/contexts/ThemeContext";
+import { useMemo } from "react";
 import { Route, Trip, TripStatus } from "../src/types/models";
 import { showToast } from "../src/utils/toast";
 
@@ -65,6 +67,25 @@ function tripStatusColor(status: TripStatus): string {
 
 export default function DriverMapScreen() {
   const { user, signOut } = useAuth();
+  const { colors } = useThemeColors();
+  const ds = useMemo(() => ({
+    topBarText: { color: colors.text },
+    panelTitle: { color: colors.text },
+    pickupSheetName: { color: colors.text },
+    seatCountText: { color: colors.text },
+    bookingTitle: { color: colors.text },
+    topBar: { backgroundColor: 'rgba(255,255,255,0.92)' },
+    permissionBanner: { backgroundColor: colors.surface },
+    chip: { backgroundColor: colors.surface, borderColor: colors.veryLightBlue },
+    bottomPanel: { backgroundColor: colors.surface },
+    pickupSheet: { backgroundColor: colors.surface },
+    iconButton: { backgroundColor: colors.blueWash },
+    seatBtn: { backgroundColor: colors.white, borderColor: colors.veryLightBlue },
+    seatCounterRow: { backgroundColor: colors.veryLightBlue },
+    bookingCard: { backgroundColor: colors.veryLightBlue },
+    bookingIcon: { backgroundColor: colors.white },
+    trackingBadge: { backgroundColor: colors.veryLightBlue },
+  }), [colors]);
   const {
     status: permissionStatus,
     location,
@@ -363,26 +384,26 @@ export default function DriverMapScreen() {
         </MapView>
 
         {/* ---- Top bar ---- */}
-        <View style={styles.topBar}>
-          <Pressable style={styles.iconButton} onPress={() => router.back()}>
+        <View style={[styles.topBar, ds.topBar]}>
+          <Pressable style={[styles.iconButton, ds.iconButton]} onPress={() => router.back()}>
             <MaterialCommunityIcons name="arrow-left" size={22} color={COLORS.primary} />
           </Pressable>
           <View style={styles.topBarTitle}>
             <AppText variant="caption" style={styles.topBarEyebrow}>DRIVER MAP</AppText>
-            <AppText variant="heading" style={styles.topBarText}>
+            <AppText variant="heading" style={[styles.topBarText, ds.topBarText]}>
               {hasActiveTrip
                 ? `${activeTrip.origin || "Origin"} → ${activeTrip.destination || "Dest"}`
                 : "Select a route to start"}
             </AppText>
           </View>
-          <Pressable style={styles.iconButton} onPress={() => requestPermission()}>
+          <Pressable style={[styles.iconButton, ds.iconButton]} onPress={() => requestPermission()}>
             <MaterialCommunityIcons name="crosshairs-gps" size={20} color={COLORS.primary} />
           </Pressable>
         </View>
 
         {/* ---- Location permission banner ---- */}
         {permissionStatus === "denied" && (
-          <Pressable style={styles.permissionBanner} onPress={() => requestPermission()}>
+          <Pressable style={[styles.permissionBanner, ds.permissionBanner]} onPress={() => requestPermission()}>
             <MaterialCommunityIcons name="map-marker-alert-outline" size={18} color={COLORS.warning} />
             <AppText variant="caption" style={styles.permissionText}>
               {deniedMessage || "Location needed for trip tracking"}
@@ -424,7 +445,7 @@ export default function DriverMapScreen() {
         )}
 
         {/* ---- Bottom panel: trip controls ---- */}
-        <View style={styles.bottomPanel}>
+        <View style={[styles.bottomPanel, ds.bottomPanel]}>
           <View style={styles.handle} />
 
           {!hasActiveTrip ? (
@@ -435,7 +456,7 @@ export default function DriverMapScreen() {
                   <MaterialCommunityIcons name="steering" size={22} color={COLORS.primary} />
                 </View>
                 <View style={styles.panelCopy}>
-                  <AppText variant="heading" style={styles.panelTitle}>Ready to go?</AppText>
+                  <AppText variant="heading" style={[styles.panelTitle, ds.panelTitle]}>Ready to go?</AppText>
                   <AppText variant="caption" style={styles.panelSubtitle}>
                     {selectedRouteId
                       ? "Start your trip to become visible to passengers"
@@ -445,7 +466,7 @@ export default function DriverMapScreen() {
               </View>
 
               {isTripActive && location && (
-                <View style={styles.trackingBadge}>
+                <View style={[styles.trackingBadge, ds.trackingBadge]}>
                   <View style={styles.trackingDot} />
                   <AppText variant="caption" style={styles.trackingText}>
                     Live tracking active — updating every 15s
@@ -483,18 +504,18 @@ export default function DriverMapScreen() {
               </View>
 
               {/* Seat counter */}
-              <View style={styles.seatCounterRow}>
+              <View style={[styles.seatCounterRow, ds.seatCounterRow]}>
                 <AppText variant="caption" style={styles.sectionLabel}>AVAILABLE SEATS</AppText>
                 <View style={styles.seatCounterControls}>
                   <Pressable
-                    style={styles.seatBtn}
+                    style={[styles.seatBtn, ds.seatBtn]}
                     onPress={() => handleUpdateSeats(seatCount - 1)}
                   >
                     <MaterialCommunityIcons name="minus" size={18} color={COLORS.primary} />
                   </Pressable>
-                  <AppText variant="heading" style={styles.seatCountText}>{seatCount}</AppText>
+                  <AppText variant="heading" style={[styles.seatCountText, ds.seatCountText]}>{seatCount}</AppText>
                   <Pressable
-                    style={styles.seatBtn}
+                    style={[styles.seatBtn, ds.seatBtn]}
                     onPress={() => handleUpdateSeats(seatCount + 1)}
                   >
                     <MaterialCommunityIcons name="plus" size={18} color={COLORS.primary} />
@@ -516,12 +537,12 @@ export default function DriverMapScreen() {
                   </View>
                 ) : (
                   bookings.map((booking: any, index: number) => (
-                    <View key={booking.id || index} style={styles.bookingCard}>
-                      <View style={styles.bookingIcon}>
+                    <View key={booking.id || index} style={[styles.bookingCard, ds.bookingCard]}>
+                      <View style={[styles.bookingIcon, ds.bookingIcon]}>
                         <MaterialCommunityIcons name="account" size={16} color={COLORS.primary} />
                       </View>
                       <View style={styles.bookingCopy}>
-                        <AppText variant="heading" style={styles.bookingTitle}>
+                        <AppText variant="heading" style={[styles.bookingTitle, ds.bookingTitle]}>
                           {booking.passengerName || "Passenger"}
                         </AppText>
                         <AppText variant="caption" style={styles.bookingSubtitle}>
@@ -589,7 +610,7 @@ export default function DriverMapScreen() {
         </View>
         {/* ---- Pickup detail bottom sheet ---- */}
         {selectedPickup && (
-          <View style={styles.pickupSheet}>
+          <View style={[styles.pickupSheet, ds.pickupSheet]}>
             <View style={styles.handle} />
             <View style={styles.pickupSheetContent}>
               <View style={styles.pickupSheetHeader}>
@@ -597,7 +618,7 @@ export default function DriverMapScreen() {
                   <MaterialCommunityIcons name="account-circle" size={22} color={COLORS.accent} />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <AppText variant="heading" style={styles.pickupSheetName}>
+                  <AppText variant="heading" style={[styles.pickupSheetName, ds.pickupSheetName]}>
                     {selectedPickup.passengerName}
                   </AppText>
                   <View style={styles.pickupSheetMeta}>

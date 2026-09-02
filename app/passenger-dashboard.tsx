@@ -16,8 +16,10 @@ import AppBackground from "../src/components/ui/AppBackground";
 import AppText from "../src/components/ui/AppText";
 import AuthGate from "../src/components/AuthGate";
 import { useAuth } from "../src/contexts/AuthContext";
+import { useThemeColors } from "../src/contexts/ThemeContext";
 import { getUserProfile, getPhotoURL } from "../src/services/profile";
 import { COLORS, SPACING } from "../src/theme";
+import { useMemo } from "react";
 
 // ---------------------------------------------------------------------------
 // Animated wrapper for staggered entrance
@@ -81,6 +83,9 @@ function ActionTile({
   onPress: () => void;
   delay: number;
 }) {
+  const { colors: c } = useThemeColors();
+  const tileBg = useMemo(() => ({ backgroundColor: c.glass, borderColor: c.glassBorder }), [c]);
+  const tileText = useMemo(() => ({ color: c.text }), [c]);
   const scale = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -96,7 +101,7 @@ function ActionTile({
   return (
     <Pressable
       onPress={onPress}
-      style={({ pressed }) => [styles.tile, pressed && styles.tilePressed]}
+      style={({ pressed }) => [[styles.tile, tileBg], pressed && styles.tilePressed]}
     >
       <Animated.View
         style={[
@@ -107,7 +112,7 @@ function ActionTile({
       >
         <MaterialCommunityIcons name={icon as any} size={24} color={color} />
       </Animated.View>
-      <AppText variant="caption" style={styles.tileLabel}>
+      <AppText variant="caption" style={[styles.tileLabel, tileText]}>
         {label}
       </AppText>
     </Pressable>
@@ -120,6 +125,17 @@ function ActionTile({
 
 export default function PassengerDashboardScreen() {
   const { user, signOut } = useAuth();
+  const { colors } = useThemeColors();
+  const ds = useMemo(() => ({
+    name: { color: colors.text },
+    greeting: { color: colors.textSecondary },
+    tileLabel: { color: colors.text },
+    stepsTitle: { color: colors.text },
+    stepText: { color: colors.textSecondary },
+    tile: { backgroundColor: colors.glass, borderColor: colors.glassBorder },
+    stepsCard: { backgroundColor: colors.glass, borderColor: colors.glassBorder },
+    avatar: { backgroundColor: colors.blueWash },
+  }), [colors]);
   const [refreshing, setRefreshing] = useState(false);
   const [profile, setProfile] = useState<Record<string, any> | null>(null);
 
@@ -194,10 +210,10 @@ export default function PassengerDashboardScreen() {
                 <AppText variant="caption" style={styles.eyebrow}>
                   PASSENGER
                 </AppText>
-                <AppText variant="title" style={styles.greeting}>
+                <AppText variant="title" style={[styles.greeting, ds.greeting]}>
                   {greeting},
                 </AppText>
-                <AppText variant="heading" style={styles.name}>
+                <AppText variant="heading" style={[styles.name, ds.name]}>
                   {displayName} 👋
                 </AppText>
               </View>
@@ -206,7 +222,7 @@ export default function PassengerDashboardScreen() {
                 onPress={() => router.push("/profile")}
                 style={({ pressed }) => [pressed && { transform: [{ scale: 0.9 }] }]}
               >
-                <Animated.View style={[styles.avatar, { transform: [{ scale: pulse }] }]}>
+                <Animated.View style={[[styles.avatar, ds.avatar], { transform: [{ scale: pulse }] }]}>
                   {photoURL ? (
                     <Image source={{ uri: photoURL }} style={styles.avatarImage} />
                   ) : (
@@ -284,8 +300,8 @@ export default function PassengerDashboardScreen() {
 
           {/* ─── How it works ─── */}
           <FadeSlideIn delay={350}>
-            <View style={styles.stepsCard}>
-              <AppText variant="heading" style={styles.stepsTitle}>
+            <View style={[styles.stepsCard, ds.stepsCard]}>
+              <AppText variant="heading" style={[styles.stepsTitle, ds.stepsTitle]}>
                 How it works
               </AppText>
               {[
@@ -301,7 +317,7 @@ export default function PassengerDashboardScreen() {
                       color={COLORS.primary}
                     />
                   </View>
-                  <AppText variant="caption" style={styles.stepText}>
+                  <AppText variant="caption" style={[styles.stepText, ds.stepText]}>
                     {step.text}
                   </AppText>
                 </View>

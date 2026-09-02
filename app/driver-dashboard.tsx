@@ -19,6 +19,8 @@ import AppText from "../src/components/ui/AppText";
 import PrimaryButton from "../src/components/ui/PrimaryButton";
 import AuthGate from "../src/components/AuthGate";
 import { useAuth } from "../src/contexts/AuthContext";
+import { useThemeColors } from "../src/contexts/ThemeContext";
+import { useMemo } from "react";
 import {
   getActiveRoutes,
   getDriverActiveTrip,
@@ -141,6 +143,24 @@ function PulseDot({ color }: { color: string }) {
 
 export default function DriverDashboardScreen() {
   const { user, signOut } = useAuth();
+  const { colors } = useThemeColors();
+  const ds = useMemo(() => ({
+    title: { color: colors.text },
+    driverName: { color: colors.text },
+    statusTitle: { color: colors.secondary },
+    tileLabel: { color: colors.text },
+    sectionTitle: { color: colors.text },
+    routeTitle: { color: colors.text },
+    seatCounterLabel: { color: colors.text },
+    seatCountText: { color: colors.text },
+    activeTripTitle: { color: colors.text },
+    tile: { backgroundColor: colors.glass, borderColor: colors.glassBorder },
+    tileIconWrap: { backgroundColor: 'transparent' },
+    seatBtn: { backgroundColor: colors.white, borderColor: colors.veryLightBlue },
+    seatCounterCard: { backgroundColor: colors.blueWash, borderColor: colors.veryLightBlue },
+    routeRow: { backgroundColor: colors.veryLightBlue + 'BC' },
+    selectedRoute: { borderColor: colors.primary, backgroundColor: colors.blueWash },
+  }), [colors]);
   const [routes, setRoutes] = useState<Route[]>([]);
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
   const [online, setOnline] = useState(false);
@@ -329,10 +349,10 @@ export default function DriverDashboardScreen() {
                 <AppText variant="caption" style={styles.eyebrow}>
                   DRIVER CONTROL
                 </AppText>
-                <AppText variant="title" style={styles.title}>
+                <AppText variant="title" style={[styles.title, ds.title]}>
                   Ready to move?
                 </AppText>
-                <AppText variant="heading" style={styles.driverName}>
+                <AppText variant="heading" style={[styles.driverName, ds.driverName]}>
                   {displayName} 👋
                 </AppText>
               </View>
@@ -366,7 +386,7 @@ export default function DriverDashboardScreen() {
               <View style={styles.statusCopy}>
                 <View style={styles.statusTitleRow}>
                   {online && <PulseDot color={COLORS.success} />}
-                  <AppText variant="heading" style={styles.statusTitle}>
+                  <AppText variant="heading" style={[styles.statusTitle, ds.statusTitle]}>
                     {activeTrip
                       ? "Trip active"
                       : online
@@ -405,7 +425,7 @@ export default function DriverDashboardScreen() {
                   />
                 </View>
                 <View style={styles.activeTripCopy}>
-                  <AppText variant="heading" style={styles.activeTripTitle}>
+                  <AppText variant="heading" style={[styles.activeTripTitle, ds.activeTripTitle]}>
                     Active trip
                   </AppText>
                   <AppText variant="caption" style={styles.activeTripSubtitle}>
@@ -432,7 +452,7 @@ export default function DriverDashboardScreen() {
           <FadeSlideIn delay={200} style={{ marginBottom: SPACING.lg }}>
             <View style={styles.tilesGrid}>
               <Pressable
-                style={({ pressed }) => [styles.tile, pressed && styles.tilePressed]}
+                style={({ pressed }) => [[styles.tile, ds.tile], pressed && styles.tilePressed]}
                 onPress={() => router.push("/driver-map")}
               >
                 <View style={[styles.tileIconWrap, { backgroundColor: COLORS.primary + "18" }]}>
@@ -442,13 +462,13 @@ export default function DriverDashboardScreen() {
                     color={COLORS.primary}
                   />
                 </View>
-                <AppText variant="caption" style={styles.tileLabel}>
+                <AppText variant="caption" style={[styles.tileLabel, ds.tileLabel]}>
                   View map
                 </AppText>
               </Pressable>
 
               <Pressable
-                style={({ pressed }) => [styles.tile, pressed && styles.tilePressed]}
+                style={({ pressed }) => [[styles.tile, ds.tile], pressed && styles.tilePressed]}
                 onPress={() => router.push("/driver-account")}
               >
                 <View style={[styles.tileIconWrap, { backgroundColor: COLORS.accent + "18" }]}>
@@ -458,7 +478,7 @@ export default function DriverDashboardScreen() {
                     color={COLORS.accent}
                   />
                 </View>
-                <AppText variant="caption" style={styles.tileLabel}>
+                <AppText variant="caption" style={[styles.tileLabel, ds.tileLabel]}>
                   Trip history
                 </AppText>
               </Pressable>
@@ -467,7 +487,7 @@ export default function DriverDashboardScreen() {
 
           {/* ─── Routes ─── */}
           <FadeSlideIn delay={280}>
-            <AppText variant="heading" style={styles.sectionTitle}>
+            <AppText variant="heading" style={[styles.sectionTitle, ds.sectionTitle]}>
               {activeTrip ? "Current route" : "Choose your route"}
             </AppText>
           </FadeSlideIn>
@@ -498,8 +518,8 @@ export default function DriverDashboardScreen() {
                   <Pressable
                     key={route.id}
                     style={[
-                      styles.routeRow,
-                      route.id === selectedRouteId && styles.selectedRoute,
+                      [styles.routeRow, ds.routeRow],
+                      route.id === selectedRouteId && [styles.selectedRoute, ds.selectedRoute],
                     ]}
                     onPress={() => setSelectedRouteId(route.id)}
                   >
@@ -512,7 +532,7 @@ export default function DriverDashboardScreen() {
                       />
                     </View>
                     <View style={styles.routeCopy}>
-                      <AppText variant="heading" style={styles.routeTitle}>
+                      <AppText variant="heading" style={[styles.routeTitle, ds.routeTitle]}>
                         {route.origin}
                       </AppText>
                       <AppText variant="caption" style={styles.routeDest}>
@@ -529,21 +549,21 @@ export default function DriverDashboardScreen() {
           {/* ─── Seat counter ─── */}
           {!activeTrip && (
             <FadeSlideIn delay={360}>
-              <View style={styles.seatCounterCard}>
+              <View style={[styles.seatCounterCard, ds.seatCounterCard]}>
                 <View style={styles.seatCounterLeft}>
                   <MaterialCommunityIcons name="seat" size={20} color={COLORS.primary} />
-                  <AppText variant="heading" style={styles.seatCounterLabel}>Available seats</AppText>
+                  <AppText variant="heading" style={[styles.seatCounterLabel, ds.seatCounterLabel]}>Available seats</AppText>
                 </View>
                 <View style={styles.seatCounterControls}>
                   <Pressable
-                    style={styles.seatBtn}
+                    style={[styles.seatBtn, ds.seatBtn]}
                     onPress={() => void handleUpdateSeats(seatCount - 1)}
                   >
                     <MaterialCommunityIcons name="minus" size={18} color={COLORS.primary} />
                   </Pressable>
-                  <AppText variant="heading" style={styles.seatCountText}>{seatCount}</AppText>
+                  <AppText variant="heading" style={[styles.seatCountText, ds.seatCountText]}>{seatCount}</AppText>
                   <Pressable
-                    style={styles.seatBtn}
+                    style={[styles.seatBtn, ds.seatBtn]}
                     onPress={() => void handleUpdateSeats(seatCount + 1)}
                   >
                     <MaterialCommunityIcons name="plus" size={18} color={COLORS.primary} />

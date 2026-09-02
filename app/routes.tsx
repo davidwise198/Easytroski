@@ -18,9 +18,21 @@ import AuthGate from "../src/components/AuthGate";
 import { getActiveRoutes } from "../src/services/transport";
 import { getRouteAvailableSeats } from "../src/services/map";
 import { COLORS, SPACING } from "../src/theme";
+import { useThemeColors } from "../src/contexts/ThemeContext";
+import { useMemo as useM } from "react";
 import { Route } from "../src/types/models";
 
 export default function RoutesScreen() {
+  const { colors } = useThemeColors();
+  const ds = useM(() => ({
+    title: { color: colors.text },
+    subtitle: { color: colors.textSecondary },
+    stateTitle: { color: colors.text },
+    stateText: { color: colors.textSecondary },
+    searchInput: { color: colors.text },
+    searchBar: { backgroundColor: colors.veryLightBlue, borderColor: colors.blueWash },
+    headerIcon: { backgroundColor: colors.blueWash },
+  }), [colors]);
   const [routes, setRoutes] = useState<Route[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -93,10 +105,10 @@ export default function RoutesScreen() {
         <View style={styles.headerRow}>
           <View>
             <AppText variant="caption" style={styles.eyebrow}>PLAN YOUR JOURNEY</AppText>
-            <AppText variant="title" style={styles.title}>Find a route</AppText>
-            <AppText variant="body" style={styles.subtitle}>Choose where you are going today.</AppText>
+            <AppText variant="title" style={[styles.title, ds.title]}>Find a route</AppText>
+            <AppText variant="body" style={[styles.subtitle, ds.subtitle]}>Choose where you are going today.</AppText>
           </View>
-          <View style={styles.headerIcon}>
+          <View style={[styles.headerIcon, ds.headerIcon]}>
             <MaterialCommunityIcons name="map-search-outline" size={25} color={COLORS.primary} />
           </View>
         </View>
@@ -104,30 +116,30 @@ export default function RoutesScreen() {
         {loading ? (
           <View style={styles.stateContainer}>
             <ActivityIndicator size="large" color={COLORS.primary} />
-            <AppText variant="body" style={styles.stateText}>Finding active routes...</AppText>
+            <AppText variant="body" style={[styles.stateText, ds.stateText]}>Finding active routes...</AppText>
           </View>
         ) : error ? (
           <View style={styles.stateContainer}>
             <MaterialCommunityIcons name="cloud-alert-outline" size={42} color={COLORS.accent} />
-            <AppText variant="heading" style={styles.stateTitle}>Routes unavailable</AppText>
-            <AppText variant="body" style={styles.stateText}>{error}</AppText>
+            <AppText variant="heading" style={[styles.stateTitle, ds.stateTitle]}>Routes unavailable</AppText>
+            <AppText variant="body" style={[styles.stateText, ds.stateText]}>{error}</AppText>
             <PrimaryButton title="Try again" onPress={() => void loadRoutes()} style={styles.retryButton} />
           </View>
         ) : routes.length === 0 ? (
           <View style={styles.stateContainer}>
             <MaterialCommunityIcons name="map-marker-path" size={44} color={COLORS.primary} />
-            <AppText variant="heading" style={styles.stateTitle}>No active routes yet</AppText>
-            <AppText variant="body" style={styles.stateText}>
+            <AppText variant="heading" style={[styles.stateTitle, ds.stateTitle]}>No active routes yet</AppText>
+            <AppText variant="body" style={[styles.stateText, ds.stateText]}>
               Routes will appear here as EasyTroski operators bring vehicles online.
             </AppText>
           </View>
         ) : (
           <>
           {/* Search bar */}
-          <View style={styles.searchBar}>
+          <View style={[styles.searchBar, ds.searchBar]}>
             <MaterialCommunityIcons name="magnify" size={20} color={COLORS.textSecondary} />
             <TextInput
-              style={styles.searchInput}
+              style={[styles.searchInput, ds.searchInput]}
               placeholder="Search routes..."
               placeholderTextColor={COLORS.textSecondary}
               value={searchQuery}
@@ -144,8 +156,8 @@ export default function RoutesScreen() {
           {filteredRoutes.length === 0 ? (
             <View style={styles.stateContainer}>
               <MaterialCommunityIcons name="magnify-close" size={38} color={COLORS.textSecondary} />
-              <AppText variant="heading" style={styles.stateTitle}>No routes found</AppText>
-              <AppText variant="body" style={styles.stateText}>
+              <AppText variant="heading" style={[styles.stateTitle, ds.stateTitle]}>No routes found</AppText>
+              <AppText variant="body" style={[styles.stateText, ds.stateText]}>
                 Try a different search term.
               </AppText>
             </View>

@@ -17,6 +17,8 @@ import AccountRow from "../src/components/ui/AccountRow";
 import StatCard from "../src/components/ui/StatCard";
 import AuthGate from "../src/components/AuthGate";
 import { useAuth } from "../src/contexts/AuthContext";
+import { useThemeColors } from "../src/contexts/ThemeContext";
+import { useMemo } from "react";
 import { getDriverTrips, getDriverProfile } from "../src/services/transport";
 import { COLORS, SPACING } from "../src/theme";
 import { Trip, TripStatus } from "../src/types/models";
@@ -108,6 +110,20 @@ function formatTime(date: Date | string | undefined): string {
 
 export default function DriverAccountScreen() {
   const { user, signOut } = useAuth();
+  const { colors } = useThemeColors();
+  const ds = useMemo(() => ({
+    profileName: { color: colors.text },
+    tripRoute: { color: colors.text },
+    tripDirection: { color: colors.textSecondary },
+    sectionLabel: { color: colors.textSecondary },
+    emptyText: { color: colors.textSecondary },
+    detailCard: { backgroundColor: colors.glass, borderColor: colors.glassBorder },
+    divider: { backgroundColor: colors.veryLightBlue },
+    tripCard: { backgroundColor: colors.glass, borderColor: colors.glassBorder },
+    emptyState: { backgroundColor: colors.glass, borderColor: colors.glassBorder },
+    backBtn: { backgroundColor: colors.blueWash },
+    avatarLarge: { backgroundColor: colors.blueWash },
+  }), [colors]);
   const [trips, setTrips] = useState<Trip[]>([]);
   const [driverProfile, setDriverProfile] = useState<any>(null);
   const [vehicle, setVehicle] = useState<any>(null);
@@ -187,7 +203,7 @@ export default function DriverAccountScreen() {
           }
         >
           {/* ── Back ── */}
-          <Pressable style={styles.backBtn} onPress={() => router.back()}>
+          <Pressable style={[styles.backBtn, ds.backBtn]} onPress={() => router.back()}>
             <MaterialCommunityIcons
               name="arrow-left"
               size={22}
@@ -212,14 +228,14 @@ export default function DriverAccountScreen() {
               },
             ]}
           >
-            <View style={styles.avatarLarge}>
+            <View style={[styles.avatarLarge, ds.avatarLarge]}>
               <MaterialCommunityIcons
                 name="steering"
                 size={40}
                 color={COLORS.primary}
               />
             </View>
-            <AppText variant="heading" style={styles.profileName}>
+            <AppText variant="heading" style={[styles.profileName, ds.profileName]}>
               {displayName}
             </AppText>
             <View style={styles.roleBadge}>
@@ -260,10 +276,10 @@ export default function DriverAccountScreen() {
 
           {/* ── Account details ── */}
           <View style={styles.section}>
-            <AppText variant="caption" style={styles.sectionLabel}>
+            <AppText variant="caption" style={[styles.sectionLabel, ds.sectionLabel]}>
               ACCOUNT DETAILS
             </AppText>
-            <View style={styles.detailCard}>
+            <View style={[styles.detailCard, ds.detailCard]}>
               <AccountRow icon="email-outline" label="Email" value={email} />
               <View style={styles.divider} />
               <AccountRow icon="phone-outline" label="Phone" value={phone} />
@@ -285,10 +301,10 @@ export default function DriverAccountScreen() {
           {/* ── Vehicle details ── */}
           {vehicle && (
             <View style={styles.section}>
-              <AppText variant="caption" style={styles.sectionLabel}>
+              <AppText variant="caption" style={[styles.sectionLabel, ds.sectionLabel]}>
                 VEHICLE INFORMATION
               </AppText>
-              <View style={styles.detailCard}>
+              <View style={[styles.detailCard, ds.detailCard]}>
                 <AccountRow
                   icon="car"
                   label="Registration"
@@ -319,10 +335,10 @@ export default function DriverAccountScreen() {
           {/* ── Driver status ── */}
           {driverProfile && (
             <View style={styles.section}>
-              <AppText variant="caption" style={styles.sectionLabel}>
+              <AppText variant="caption" style={[styles.sectionLabel, ds.sectionLabel]}>
                 DRIVER STATUS
               </AppText>
-              <View style={styles.detailCard}>
+              <View style={[styles.detailCard, ds.detailCard]}>
                 <AccountRow
                   icon="wifi"
                   label="Availability"
@@ -354,7 +370,7 @@ export default function DriverAccountScreen() {
 
           {/* ── Trip history ── */}
           <View style={styles.section}>
-            <AppText variant="caption" style={styles.sectionLabel}>
+            <AppText variant="caption" style={[styles.sectionLabel, ds.sectionLabel]}>
               TRIP HISTORY
             </AppText>
 
@@ -364,20 +380,20 @@ export default function DriverAccountScreen() {
                 style={styles.loader}
               />
             ) : trips.length === 0 ? (
-              <View style={styles.emptyState}>
+              <View style={[styles.emptyState, ds.emptyState]}>
                 <MaterialCommunityIcons
                   name="map-clock-outline"
                   size={36}
                   color={COLORS.textSecondary}
                 />
-                <AppText variant="body" style={styles.emptyText}>
+                <AppText variant="body" style={[styles.emptyText, ds.emptyText]}>
                   No trips yet. Start a trip from the dashboard to see your history.
                 </AppText>
               </View>
             ) : (
               <View style={styles.tripList}>
                 {trips.map((trip) => (
-                  <View key={trip.id} style={styles.tripCard}>
+                  <View key={trip.id} style={[styles.tripCard, ds.tripCard]}>
                     <View style={styles.tripLeft}>
                       <View
                         style={[
@@ -386,7 +402,7 @@ export default function DriverAccountScreen() {
                         ]}
                       />
                       <View style={styles.tripCopy}>
-                        <AppText variant="heading" style={styles.tripRoute}>
+                        <AppText variant="heading" style={[styles.tripRoute, ds.tripRoute]}>
                           {trip.origin || "Origin"} →{" "}
                           {trip.destination || "Destination"}
                         </AppText>
@@ -425,7 +441,7 @@ export default function DriverAccountScreen() {
                       </View>
                       <AppText
                         variant="caption"
-                        style={styles.tripDirection}
+                        style={[styles.tripDirection, ds.tripDirection]}
                       >
                         {trip.direction === "going" ? "Outbound" : "Return"}
                       </AppText>

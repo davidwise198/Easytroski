@@ -22,6 +22,8 @@ import { createBooking, cancelBooking, rateDriver, getActiveRoutes } from "../sr
 import { auth, db } from "../src/services/firebase";
 import { doc, onSnapshot, updateDoc } from "firebase/firestore";
 import { COLORS, SPACING } from "../src/theme";
+import { useThemeColors } from "../src/contexts/ThemeContext";
+import { useMemo } from "react";
 import { showToast } from "../src/utils/toast";
 import {
   ActiveTripMarker,
@@ -67,6 +69,27 @@ function tripStatusColor(status: TripStatus): string {
 
 export default function PassengerMapScreen() {
   const { user, signOut } = useAuth();
+  const { colors } = useThemeColors();
+  const ds = useMemo(() => ({
+    topBarText: { color: colors.text },
+    chipText: { color: colors.text },
+    bookingBannerText: { color: colors.text },
+    sheetRoute: { color: colors.text },
+    vehicleInfoValue: { color: colors.text },
+    seatEditText: { color: colors.text },
+    ratingTitle: { color: colors.text },
+    topBar: { backgroundColor: 'rgba(255,255,255,0.92)' },
+    permissionBanner: { backgroundColor: colors.surface },
+    chip: { backgroundColor: colors.surface, borderColor: colors.veryLightBlue },
+    bookingBanner: { backgroundColor: colors.surface },
+    editSeatsRow: { backgroundColor: colors.surface },
+    loadingOverlay: { backgroundColor: colors.surface },
+    bottomSheet: { backgroundColor: colors.surface },
+    ratingCard: { backgroundColor: colors.surface },
+    vehicleInfoCard: { backgroundColor: colors.veryLightBlue },
+    sheetInfo: { borderColor: colors.veryLightBlue },
+    iconButton: { backgroundColor: colors.blueWash },
+  }), [colors]);
   const params = useLocalSearchParams<{ routeId?: string }>();
   const {
     status: permissionStatus,
@@ -370,24 +393,24 @@ export default function PassengerMapScreen() {
         </MapView>
 
         {/* ---- Top bar ---- */}
-        <View style={styles.topBar}>
-          <Pressable style={styles.iconButton} onPress={() => router.back()}>
+        <View style={[styles.topBar, ds.topBar]}>
+          <Pressable style={[styles.iconButton, ds.iconButton]} onPress={() => router.back()}>
             <MaterialCommunityIcons name="arrow-left" size={22} color={COLORS.primary} />
           </Pressable>
 
           <View style={styles.topBarTitle}>
             <AppText variant="caption" style={styles.topBarEyebrow}>EASYTROLSKI MAP</AppText>
-            <AppText variant="heading" style={styles.topBarText}>Find a ride</AppText>
+            <AppText variant="heading" style={[styles.topBarText, ds.topBarText]}>Find a ride</AppText>
           </View>
 
-          <Pressable style={styles.iconButton} onPress={() => requestPermission()}>
+          <Pressable style={[styles.iconButton, ds.iconButton]} onPress={() => requestPermission()}>
             <MaterialCommunityIcons name="crosshairs-gps" size={20} color={COLORS.primary} />
           </Pressable>
         </View>
 
         {/* ---- Location permission banner ---- */}
         {permissionStatus === "denied" && (
-          <Pressable style={styles.permissionBanner} onPress={() => requestPermission()}>
+          <Pressable style={[styles.permissionBanner, ds.permissionBanner]} onPress={() => requestPermission()}>
             <MaterialCommunityIcons name="map-marker-alert-outline" size={18} color={COLORS.warning} />
             <AppText variant="caption" style={styles.permissionText}>
               {deniedMessage || "Location permission needed for nearby routes"}
@@ -396,7 +419,7 @@ export default function PassengerMapScreen() {
         )}
 
         {permissionStatus === "undetermined" && !locationLoading && (
-          <Pressable style={styles.permissionBanner} onPress={() => requestPermission()}>
+          <Pressable style={[styles.permissionBanner, ds.permissionBanner]} onPress={() => requestPermission()}>
             <MaterialCommunityIcons name="map-marker-plus" size={18} color={COLORS.primary} />
             <AppText variant="caption" style={[styles.permissionText, { color: COLORS.primary }]}>
               Tap to enable location and see nearby routes
@@ -492,7 +515,7 @@ export default function PassengerMapScreen() {
                 COLORS.warning
               }
             />
-            <AppText variant="caption" style={styles.bookingBannerText}>
+            <AppText variant="caption" style={[styles.bookingBannerText, ds.bookingBannerText]}>
               {lastBookingStatus === "confirmed"
                 ? `Booking confirmed! ${bookingSeats} seat${bookingSeats > 1 ? 's' : ''} reserved.${remainingSeats !== null ? ` ${remainingSeats} seat${remainingSeats !== 1 ? 's' : ''} remaining.` : ''} Your driver is on the way.`
                 : lastBookingStatus === "cancelled"
@@ -520,7 +543,7 @@ export default function PassengerMapScreen() {
 
           {/* Edit seats inline */}
           {editingSeats && lastBookingStatus !== "cancelled" && (
-            <View style={styles.editSeatsRow}>
+            <View style={[styles.editSeatsRow, ds.editSeatsRow]}>
               <AppText variant="caption" style={styles.editSeatsLabel}>Seats:</AppText>
               <Pressable
                 style={styles.seatEditBtn}
@@ -528,7 +551,7 @@ export default function PassengerMapScreen() {
               >
                 <MaterialCommunityIcons name="minus" size={16} color={COLORS.primary} />
               </Pressable>
-              <AppText variant="heading" style={styles.seatEditText}>{bookingSeats}</AppText>
+              <AppText variant="heading" style={[styles.seatEditText, ds.seatEditText]}>{bookingSeats}</AppText>
               <Pressable
                 style={styles.seatEditBtn}
                 onPress={() => { if (bookingSeats < 5) setBookingSeats(bookingSeats + 1); }}
@@ -554,14 +577,14 @@ export default function PassengerMapScreen() {
 
         {/* ---- Loading indicator for trips ---- */}
         {loadingTrips && (
-          <View style={styles.loadingOverlay}>
+          <View style={[styles.loadingOverlay, ds.loadingOverlay]}>
             <ActivityIndicator size="small" color={COLORS.primary} />
           </View>
         )}
 
         {/* ---- Bottom sheet: selected trip detail ---- */}
         {selectedMarker && (
-          <View style={styles.bottomSheet}>
+          <View style={[styles.bottomSheet, ds.bottomSheet]}>
             <View style={styles.handle} />
             <View style={styles.sheetContent}>
               {/* Route header */}
@@ -574,7 +597,7 @@ export default function PassengerMapScreen() {
                   />
                 </View>
                 <View style={styles.sheetRouteCopy}>
-                  <AppText variant="heading" style={styles.sheetRoute}>
+                  <AppText variant="heading" style={[styles.sheetRoute, ds.sheetRoute]}>
                     {selectedMarker.trip.origin || "Origin"} →{" "}
                     {selectedMarker.trip.destination || "Destination"}
                   </AppText>
@@ -598,11 +621,11 @@ export default function PassengerMapScreen() {
               </View>
 
               {/* Vehicle info */}
-              <View style={styles.vehicleInfoCard}>
+              <View style={[styles.vehicleInfoCard, ds.vehicleInfoCard]}>
                 <View style={styles.vehicleInfoRow}>
                   <MaterialCommunityIcons name="steering" size={16} color={COLORS.primary} />
                   <AppText variant="caption" style={styles.vehicleInfoLabel}>Driver</AppText>
-                  <AppText variant="heading" style={styles.vehicleInfoValue}>
+                  <AppText variant="heading" style={[styles.vehicleInfoValue, ds.vehicleInfoValue]}>
                     {selectedMarker.trip.driverName || "Driver"}
                   </AppText>
                 </View>
@@ -610,7 +633,7 @@ export default function PassengerMapScreen() {
                   <View style={styles.vehicleInfoRow}>
                     <MaterialCommunityIcons name="car" size={16} color={COLORS.primary} />
                     <AppText variant="caption" style={styles.vehicleInfoLabel}>Plate</AppText>
-                    <AppText variant="heading" style={styles.vehicleInfoValue}>
+                    <AppText variant="heading" style={[styles.vehicleInfoValue, ds.vehicleInfoValue]}>
                       {selectedMarker.trip.vehiclePlate}
                     </AppText>
                   </View>
@@ -619,7 +642,7 @@ export default function PassengerMapScreen() {
                   <View style={styles.vehicleInfoRow}>
                     <MaterialCommunityIcons name="palette" size={16} color={COLORS.primary} />
                     <AppText variant="caption" style={styles.vehicleInfoLabel}>Vehicle</AppText>
-                    <AppText variant="heading" style={styles.vehicleInfoValue}>
+                    <AppText variant="heading" style={[styles.vehicleInfoValue, ds.vehicleInfoValue]}>
                       {[selectedMarker.trip.vehicleColor, selectedMarker.trip.vehicleBrand].filter(Boolean).join(" ")}
                     </AppText>
                   </View>
@@ -627,7 +650,7 @@ export default function PassengerMapScreen() {
               </View>
 
               {/* Seats */}
-              <View style={styles.sheetInfo}>
+              <View style={[styles.sheetInfo, ds.sheetInfo]}>
                 <View style={styles.sheetInfoItem}>
                   <MaterialCommunityIcons
                     name="seat"
@@ -690,9 +713,9 @@ export default function PassengerMapScreen() {
         {/* ── Rating modal ── */}
         {showRating && (
           <View style={styles.ratingOverlay}>
-            <View style={styles.ratingCard}>
+            <View style={[styles.ratingCard, ds.ratingCard]}>
               <MaterialCommunityIcons name="star-circle" size={48} color={COLORS.accent} />
-              <AppText variant="heading" style={styles.ratingTitle}>Rate your trip</AppText>
+              <AppText variant="heading" style={[styles.ratingTitle, ds.ratingTitle]}>Rate your trip</AppText>
               <AppText variant="body" style={styles.ratingSubtitle}>How was your ride?</AppText>
               <StarRating value={ratingValue} onChange={setRatingValue} size={40} />
               <PrimaryButton

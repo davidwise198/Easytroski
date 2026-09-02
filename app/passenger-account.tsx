@@ -17,6 +17,8 @@ import AccountRow from "../src/components/ui/AccountRow";
 import StatCard from "../src/components/ui/StatCard";
 import AuthGate from "../src/components/AuthGate";
 import { useAuth } from "../src/contexts/AuthContext";
+import { useThemeColors } from "../src/contexts/ThemeContext";
+import { useMemo } from "react";
 import { getPassengerBookings } from "../src/services/transport";
 import { COLORS, SPACING } from "../src/theme";
 import { Booking, BookingStatus } from "../src/types/models";
@@ -97,6 +99,20 @@ function formatTime(date: Date | string): string {
 
 export default function PassengerAccountScreen() {
   const { user, signOut } = useAuth();
+  const { colors } = useThemeColors();
+  const ds = useMemo(() => ({
+    profileName: { color: colors.text },
+    bookingRoute: { color: colors.text },
+    bookingSeats: { color: colors.textSecondary },
+    sectionLabel: { color: colors.textSecondary },
+    emptyText: { color: colors.textSecondary },
+    detailCard: { backgroundColor: colors.glass, borderColor: colors.glassBorder },
+    divider: { backgroundColor: colors.veryLightBlue },
+    bookingCard: { backgroundColor: colors.glass, borderColor: colors.glassBorder },
+    emptyState: { backgroundColor: colors.glass, borderColor: colors.glassBorder },
+    backBtn: { backgroundColor: colors.blueWash },
+    avatarLarge: { backgroundColor: colors.blueWash },
+  }), [colors]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -167,7 +183,7 @@ export default function PassengerAccountScreen() {
           }
         >
           {/* ── Back ── */}
-          <Pressable style={styles.backBtn} onPress={() => router.back()}>
+          <Pressable style={[styles.backBtn, ds.backBtn]} onPress={() => router.back()}>
             <MaterialCommunityIcons
               name="arrow-left"
               size={22}
@@ -192,14 +208,14 @@ export default function PassengerAccountScreen() {
               },
             ]}
           >
-            <View style={styles.avatarLarge}>
+            <View style={[styles.avatarLarge, ds.avatarLarge]}>
               <MaterialCommunityIcons
                 name="account"
                 size={40}
                 color={COLORS.primary}
               />
             </View>
-            <AppText variant="heading" style={styles.profileName}>
+            <AppText variant="heading" style={[styles.profileName, ds.profileName]}>
               {displayName}
             </AppText>
             <View style={styles.roleBadge}>
@@ -240,10 +256,10 @@ export default function PassengerAccountScreen() {
 
           {/* ── Profile details ── */}
           <View style={styles.section}>
-            <AppText variant="caption" style={styles.sectionLabel}>
+            <AppText variant="caption" style={[styles.sectionLabel, ds.sectionLabel]}>
               ACCOUNT DETAILS
             </AppText>
-            <View style={styles.detailCard}>
+            <View style={[styles.detailCard, ds.detailCard]}>
               <AccountRow icon="email-outline" label="Email" value={email} />
               <View style={styles.divider} />
               <AccountRow
@@ -268,7 +284,7 @@ export default function PassengerAccountScreen() {
 
           {/* ── Booking history ── */}
           <View style={styles.section}>
-            <AppText variant="caption" style={styles.sectionLabel}>
+            <AppText variant="caption" style={[styles.sectionLabel, ds.sectionLabel]}>
               BOOKING HISTORY
             </AppText>
 
@@ -278,20 +294,20 @@ export default function PassengerAccountScreen() {
                 style={styles.loader}
               />
             ) : bookings.length === 0 ? (
-              <View style={styles.emptyState}>
+              <View style={[styles.emptyState, ds.emptyState]}>
                 <MaterialCommunityIcons
                   name="book-outline"
                   size={36}
                   color={COLORS.textSecondary}
                 />
-                <AppText variant="body" style={styles.emptyText}>
+                <AppText variant="body" style={[styles.emptyText, ds.emptyText]}>
                   No bookings yet. Your trip history will appear here.
                 </AppText>
               </View>
             ) : (
               <View style={styles.bookingList}>
                 {bookings.map((booking) => (
-                  <View key={booking.id} style={styles.bookingCard}>
+                  <View key={booking.id} style={[styles.bookingCard, ds.bookingCard]}>
                     <View style={styles.bookingLeft}>
                       <View
                         style={[
@@ -304,7 +320,7 @@ export default function PassengerAccountScreen() {
                       <View style={styles.bookingCopy}>
                         <AppText
                           variant="heading"
-                          style={styles.bookingRoute}
+                          style={[styles.bookingRoute, ds.bookingRoute]}
                         >
                           {booking.pickupLocation?.address || "Pickup"} →{" "}
                           {booking.dropOffLocation?.address || "Drop-off"}
@@ -344,7 +360,7 @@ export default function PassengerAccountScreen() {
                       </View>
                       <AppText
                         variant="caption"
-                        style={styles.bookingSeats}
+                        style={[styles.bookingSeats, ds.bookingSeats]}
                       >
                         {booking.seats || 1} seat{(booking.seats || 1) > 1 ? "s" : ""}
                       </AppText>
