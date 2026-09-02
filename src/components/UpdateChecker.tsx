@@ -82,9 +82,11 @@ export default function UpdateChecker({ children }: { children: React.ReactNode 
 
   const checkForUpdate = useCallback(async () => {
     try {
+      // In dev mode (Expo Go / expo start), OTA updates are not available.
+      // Show a brief notice instead of silently doing nothing.
       if (__DEV__) {
-        showBanner("Updates are not checked in development mode.");
-        setTimeout(hideBanner, 3000);
+        showBanner("Running in development — OTA updates disabled.");
+        setTimeout(hideBanner, 2500);
         return;
       }
 
@@ -112,8 +114,11 @@ export default function UpdateChecker({ children }: { children: React.ReactNode 
       }
     } catch (error) {
       setIsDownloading(false);
-      showBanner("Could not check for updates.");
-      setTimeout(hideBanner, 3000);
+      // Only show error banner for non-dev builds
+      if (!__DEV__) {
+        showBanner("Could not check for updates.");
+        setTimeout(hideBanner, 3000);
+      }
     }
   }, [showBanner, hideBanner]);
 
@@ -185,20 +190,20 @@ const styles = StyleSheet.create({
   banner: {
     position: "absolute",
     top: Platform.OS === "ios" ? 56 : 40,
-    left: 16,
-    right: 16,
+    left: 12,
+    right: 12,
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
-    paddingVertical: 12,
-    paddingHorizontal: 14,
-    borderRadius: 14,
+    paddingVertical: 14,
+    paddingHorizontal: 16,
+    borderRadius: 16,
     borderWidth: 1,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 6,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 10,
     zIndex: 9999,
   },
   bannerText: {

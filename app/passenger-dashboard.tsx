@@ -224,7 +224,7 @@ export default function PassengerDashboardScreen() {
               >
                 <Animated.View style={[[styles.avatar, ds.avatar], { transform: [{ scale: pulse }] }]}>
                   {photoURL ? (
-                    <Image source={{ uri: photoURL }} style={styles.avatarImage} />
+                    <Image source={{ uri: photoURL }} style={styles.avatarImage} resizeMode="cover" />
                   ) : (
                     <View style={styles.avatarPlaceholder}>
                       <MaterialCommunityIcons

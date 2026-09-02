@@ -151,9 +151,14 @@ export default function DriverDashboardScreen() {
     tileLabel: { color: colors.text },
     sectionTitle: { color: colors.text },
     routeTitle: { color: colors.text },
+    routeDest: { color: colors.textSecondary },
     seatCounterLabel: { color: colors.text },
     seatCountText: { color: colors.text },
     activeTripTitle: { color: colors.text },
+    activeTripSubtitle: { color: colors.textSecondary },
+    emptyText: { color: colors.textSecondary },
+    emptyHint: { color: colors.textSecondary },
+    footerLinkText: { color: colors.textSecondary },
     tile: { backgroundColor: colors.glass, borderColor: colors.glassBorder },
     tileIconWrap: { backgroundColor: 'transparent' },
     seatBtn: { backgroundColor: colors.white, borderColor: colors.veryLightBlue },
@@ -362,7 +367,7 @@ export default function DriverDashboardScreen() {
               >
                 <View style={styles.driverIcon}>
                   {photoURL ? (
-                    <Image source={{ uri: photoURL }} style={styles.driverPhoto} />
+                    <Image source={{ uri: photoURL }} style={styles.driverPhoto} resizeMode="cover" />
                   ) : (
                     <MaterialCommunityIcons
                       name="account"
@@ -428,7 +433,7 @@ export default function DriverDashboardScreen() {
                   <AppText variant="heading" style={[styles.activeTripTitle, ds.activeTripTitle]}>
                     Active trip
                   </AppText>
-                  <AppText variant="caption" style={styles.activeTripSubtitle}>
+                  <AppText variant="caption" style={[styles.activeTripSubtitle, ds.activeTripSubtitle]}>
                     Started{" "}
                     {activeTrip.startTime
                       ? new Date(activeTrip.startTime).toLocaleTimeString([], {
@@ -505,10 +510,10 @@ export default function DriverDashboardScreen() {
                   size={38}
                   color={COLORS.textSecondary}
                 />
-                <AppText variant="body" style={styles.emptyText}>
+                <AppText variant="body" style={[styles.emptyText, ds.emptyText]}>
                   No routes available yet.
                 </AppText>
-                <AppText variant="caption" style={styles.emptyHint}>
+                <AppText variant="caption" style={[styles.emptyHint, ds.emptyHint]}>
                   Contact an admin to add routes.
                 </AppText>
               </View>
@@ -535,7 +540,7 @@ export default function DriverDashboardScreen() {
                       <AppText variant="heading" style={[styles.routeTitle, ds.routeTitle]}>
                         {route.origin}
                       </AppText>
-                      <AppText variant="caption" style={styles.routeDest}>
+                      <AppText variant="caption" style={[styles.routeDest, ds.routeDest]}>
                         → {route.destination}
                         {route.stops?.length ? ` (${route.stops.length} stops)` : ""}
                       </AppText>

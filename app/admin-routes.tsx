@@ -30,6 +30,8 @@ import PrimaryButton from "../src/components/ui/PrimaryButton";
 import StatCard from "../src/components/ui/StatCard";
 import { db } from "../src/services/firebase";
 import { COLORS, SPACING } from "../src/theme";
+import { useThemeColors } from "../src/contexts/ThemeContext";
+import { useMemo } from "react";
 import { showToast } from "../src/utils/toast";
 import { Route } from "../src/types/models";
 
@@ -50,12 +52,13 @@ function EditModal({
   onClose: () => void;
   children: React.ReactNode;
 }) {
+  const { colors } = useThemeColors();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <Pressable style={styles.modalOverlay} onPress={onClose}>
         <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
           <View style={styles.modalHeader}>
-            <AppText variant="heading" style={styles.modalTitle}>{title}</AppText>
+            <AppText variant="heading" style={[styles.modalTitle, { color: colors.text }]}>{title}</AppText>
             <Pressable onPress={onClose} style={styles.modalClose}>
               <MaterialCommunityIcons name="close" size={20} color={COLORS.textSecondary} />
             </Pressable>
@@ -72,6 +75,21 @@ function EditModal({
 // ---------------------------------------------------------------------------
 
 export default function AdminDashboardScreen() {
+  const { colors } = useThemeColors();
+  const ds = useMemo(() => ({
+    title: { color: colors.text },
+    listTitle: { color: colors.text },
+    listSubtitle: { color: colors.textSecondary },
+    emptyText: { color: colors.textSecondary },
+    tabText: { color: colors.textSecondary },
+    modalTitle: { color: colors.text },
+    roleText: { color: colors.text },
+    eyebrow: { color: colors.primary },
+    modalClose: { backgroundColor: colors.blueWash },
+    modalCard: { backgroundColor: colors.surface },
+    roleOption: { backgroundColor: colors.glass, borderColor: colors.glassBorder },
+    backBtn: { backgroundColor: colors.blueWash },
+  }), [colors]);
   const [activeTab, setActiveTab] = useState<Tab>("stats");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -374,7 +392,7 @@ export default function AdminDashboardScreen() {
           <MaterialCommunityIcons name="arrow-left" size={22} color={COLORS.primary} />
         </Pressable>
         <AppText variant="caption" style={styles.eyebrow}>ADMIN DASHBOARD</AppText>
-        <AppText variant="title" style={styles.title}>EasyTroski Admin</AppText>
+        <AppText variant="title" style={[styles.title, ds.title]}>EasyTroski Admin</AppText>
 
         {/* Tab bar */}
         <ScrollView
@@ -433,7 +451,7 @@ export default function AdminDashboardScreen() {
                 {drivers.length === 0 ? (
                   <View style={styles.emptyState}>
                     <MaterialCommunityIcons name="steering" size={36} color={COLORS.textSecondary} />
-                    <AppText variant="body" style={styles.emptyText}>No drivers registered yet.</AppText>
+                    <AppText variant="body" style={[styles.emptyText, ds.emptyText]}>No drivers registered yet.</AppText>
                   </View>
                 ) : (
                   drivers.map((driver) => (
@@ -446,10 +464,10 @@ export default function AdminDashboardScreen() {
                         />
                       </View>
                       <View style={styles.listCopy}>
-                        <AppText variant="heading" style={styles.listTitle}>
+                        <AppText variant="heading" style={[styles.listTitle, ds.listTitle]}>
                           {driver.name || driver.userId?.slice(0, 8) + "..."}
                         </AppText>
-                        <AppText variant="caption" style={styles.listSubtitle}>
+                        <AppText variant="caption" style={[styles.listSubtitle, ds.listSubtitle]}>
                           {driver.online ? "Online" : "Offline"} · {driver.availableSeats ?? 0} seats · {driver.vehicleRegistration || driver.vehicleId || "No vehicle"}
                           {driver.phone ? ` · ${driver.phone}` : ""}
                         </AppText>
@@ -480,7 +498,7 @@ export default function AdminDashboardScreen() {
                 {users.length === 0 ? (
                   <View style={styles.emptyState}>
                     <MaterialCommunityIcons name="account-group" size={36} color={COLORS.textSecondary} />
-                    <AppText variant="body" style={styles.emptyText}>No users yet.</AppText>
+                    <AppText variant="body" style={[styles.emptyText, ds.emptyText]}>No users yet.</AppText>
                   </View>
                 ) : (
                   users.map((user) => (
@@ -493,8 +511,8 @@ export default function AdminDashboardScreen() {
                         />
                       </View>
                       <View style={styles.listCopy}>
-                        <AppText variant="heading" style={styles.listTitle}>{user.name || "—"}</AppText>
-                        <AppText variant="caption" style={styles.listSubtitle}>
+                        <AppText variant="heading" style={[styles.listTitle, ds.listTitle]}>{user.name || "—"}</AppText>
+                        <AppText variant="caption" style={[styles.listSubtitle, ds.listSubtitle]}>
                           {user.email || "—"} · <AppText variant="caption" style={{ color: user.role === "admin" ? COLORS.accent : COLORS.primary, fontWeight: "700" }}>{user.role || "passenger"}</AppText>
                         </AppText>
                       </View>
@@ -518,7 +536,7 @@ export default function AdminDashboardScreen() {
                 {vehicles.length === 0 ? (
                   <View style={styles.emptyState}>
                     <MaterialCommunityIcons name="car" size={36} color={COLORS.textSecondary} />
-                    <AppText variant="body" style={styles.emptyText}>No vehicles registered yet.</AppText>
+                    <AppText variant="body" style={[styles.emptyText, ds.emptyText]}>No vehicles registered yet.</AppText>
                   </View>
                 ) : (
                   vehicles.map((vehicle) => (
@@ -527,8 +545,8 @@ export default function AdminDashboardScreen() {
                         <MaterialCommunityIcons name="car" size={18} color={COLORS.primary} />
                       </View>
                       <View style={styles.listCopy}>
-                        <AppText variant="heading" style={styles.listTitle}>{vehicle.numberPlate || "—"}</AppText>
-                        <AppText variant="caption" style={styles.listSubtitle}>
+                        <AppText variant="heading" style={[styles.listTitle, ds.listTitle]}>{vehicle.numberPlate || "—"}</AppText>
+                        <AppText variant="caption" style={[styles.listSubtitle, ds.listSubtitle]}>
                           {vehicle.color || "—"} · {vehicle.capacity || "—"} seats · {vehicle.brand || "—"}
                         </AppText>
                       </View>
@@ -558,7 +576,7 @@ export default function AdminDashboardScreen() {
                 {bookings.length === 0 ? (
                   <View style={styles.emptyState}>
                     <MaterialCommunityIcons name="book-check" size={36} color={COLORS.textSecondary} />
-                    <AppText variant="body" style={styles.emptyText}>No bookings yet.</AppText>
+                    <AppText variant="body" style={[styles.emptyText, ds.emptyText]}>No bookings yet.</AppText>
                   </View>
                 ) : (
                   bookings.map((booking) => (
@@ -571,10 +589,10 @@ export default function AdminDashboardScreen() {
                         />
                       </View>
                       <View style={styles.listCopy}>
-                        <AppText variant="heading" style={styles.listTitle}>
+                        <AppText variant="heading" style={[styles.listTitle, ds.listTitle]}>
                           {booking.pickupLocation?.address || "Pickup"} → {booking.dropOffLocation?.address || "Drop-off"}
                         </AppText>
-                        <AppText variant="caption" style={styles.listSubtitle}>
+                        <AppText variant="caption" style={[styles.listSubtitle, ds.listSubtitle]}>
                           {booking.seats || 1} seat · <AppText variant="caption" style={{ color: statusColor(booking.status), fontWeight: "700" }}>{booking.status}</AppText>
                         </AppText>
                       </View>
@@ -598,7 +616,7 @@ export default function AdminDashboardScreen() {
                 {trips.length === 0 ? (
                   <View style={styles.emptyState}>
                     <MaterialCommunityIcons name="map-marker-distance" size={36} color={COLORS.textSecondary} />
-                    <AppText variant="body" style={styles.emptyText}>No trips yet.</AppText>
+                    <AppText variant="body" style={[styles.emptyText, ds.emptyText]}>No trips yet.</AppText>
                   </View>
                 ) : (
                   trips.map((trip) => (
@@ -611,14 +629,14 @@ export default function AdminDashboardScreen() {
                         />
                       </View>
                       <View style={styles.listCopy}>
-                        <AppText variant="heading" style={styles.listTitle}>
+                        <AppText variant="heading" style={[styles.listTitle, ds.listTitle]}>
                           Trip {trip.id.slice(0, 8)}...
                         </AppText>
-                        <AppText variant="caption" style={styles.listSubtitle}>
+                        <AppText variant="caption" style={[styles.listSubtitle, ds.listSubtitle]}>
                           Driver: {driverNameMap[trip.driverId] || trip.driverId?.slice(0, 8) + "..."} · <AppText variant="caption" style={{ color: statusColor(trip.status), fontWeight: "700" }}>{trip.status}</AppText>
                         </AppText>
                         {trip.startTime && (
-                          <AppText variant="caption" style={styles.listSubtitle}>
+                          <AppText variant="caption" style={[styles.listSubtitle, ds.listSubtitle]}>
                             Started: {new Date(trip.startTime).toLocaleString()}
                           </AppText>
                         )}
@@ -667,8 +685,8 @@ export default function AdminDashboardScreen() {
                         <MaterialCommunityIcons name="transit-connection-variant" size={18} color={COLORS.primary} />
                       </View>
                       <View style={styles.listCopy}>
-                        <AppText variant="heading" style={styles.listTitle}>{route.origin} → {route.destination}</AppText>
-                        <AppText variant="caption" style={styles.listSubtitle}>{route.stops?.length || 0} stops · {route.active ? "Active" : "Inactive"}</AppText>
+                        <AppText variant="heading" style={[styles.listTitle, ds.listTitle]}>{route.origin} → {route.destination}</AppText>
+                        <AppText variant="caption" style={[styles.listSubtitle, ds.listSubtitle]}>{route.stops?.length || 0} stops · {route.active ? "Active" : "Inactive"}</AppText>
                       </View>
                       <View style={styles.rowActions}>
                         <Pressable style={[styles.actionBtn, { backgroundColor: COLORS.success }]} onPress={() => void handleToggleActive(route)}>
@@ -704,7 +722,7 @@ export default function AdminDashboardScreen() {
                 size={18}
                 color={editField === role ? COLORS.white : COLORS.primary}
               />
-              <AppText variant="heading" style={[styles.roleText, editField === role && { color: COLORS.white }]}>
+              <AppText variant="heading" style={[styles.roleText, ds.roleText, editField === role && { color: colors.white }]}>
                 {role.charAt(0).toUpperCase() + role.slice(1)}
               </AppText>
             </Pressable>
@@ -755,7 +773,7 @@ export default function AdminDashboardScreen() {
                 size={18}
                 color={editField === status ? COLORS.white : statusColor(status)}
               />
-              <AppText variant="heading" style={[styles.roleText, editField === status && { color: COLORS.white }]}>
+              <AppText variant="heading" style={[styles.roleText, ds.roleText, editField === status && { color: colors.white }]}>
                 {status.charAt(0).toUpperCase() + status.slice(1)}
               </AppText>
             </Pressable>
@@ -784,7 +802,7 @@ export default function AdminDashboardScreen() {
                 size={18}
                 color={editField === status ? COLORS.white : statusColor(status)}
               />
-              <AppText variant="heading" style={[styles.roleText, editField === status && { color: COLORS.white }]}>
+              <AppText variant="heading" style={[styles.roleText, ds.roleText, editField === status && { color: colors.white }]}>
                 {status === "in_progress" ? "In Progress" : status.charAt(0).toUpperCase() + status.slice(1)}
               </AppText>
             </Pressable>

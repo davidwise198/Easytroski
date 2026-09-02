@@ -10,6 +10,8 @@ import AuthGate from "../../src/components/AuthGate";
 import { auth } from "../../src/services/firebase";
 import { createBooking, getRoute } from "../../src/services/transport";
 import { COLORS, SPACING } from "../../src/theme";
+import { useThemeColors } from "../../src/contexts/ThemeContext";
+import { useMemo } from "react";
 import { Route } from "../../src/types/models";
 import { showToast } from "../../src/utils/toast";
 
@@ -24,6 +26,17 @@ export default function NewBookingScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [booked, setBooked] = useState(false);
+  const { colors } = useThemeColors();
+  const ds = useMemo(() => ({
+    title: { color: colors.text },
+    subtitle: { color: colors.textSecondary },
+    routeTitle: { color: colors.text },
+    routeStops: { color: colors.textSecondary },
+    stateTitle: { color: colors.text },
+    stateText: { color: colors.textSecondary },
+    eyebrow: { color: colors.primary },
+    routeCard: { backgroundColor: colors.veryLightBlue, borderColor: colors.veryLightBlue },
+  }), [colors]);
 
   useEffect(() => {
     if (!routeId) {
@@ -79,7 +92,7 @@ export default function NewBookingScreen() {
         <AppBackground>
           <View style={styles.centerState}>
             <ActivityIndicator size="large" color={COLORS.primary} />
-            <AppText variant="body" style={styles.stateText}>Loading route...</AppText>
+            <AppText variant="body" style={[styles.stateText, ds.stateText]}>Loading route...</AppText>
           </View>
         </AppBackground>
       </AuthGate>
@@ -92,8 +105,8 @@ export default function NewBookingScreen() {
         <AppBackground>
           <View style={styles.centerState}>
             <MaterialCommunityIcons name="map-marker-off-outline" size={46} color={COLORS.accent} />
-            <AppText variant="heading" style={styles.stateTitle}>Route unavailable</AppText>
-            <AppText variant="body" style={styles.stateText}>{error || "This route no longer exists."}</AppText>
+            <AppText variant="heading" style={[styles.stateTitle, ds.stateTitle]}>Route unavailable</AppText>
+            <AppText variant="body" style={[styles.stateText, ds.stateText]}>{error || "This route no longer exists."}</AppText>
             <PrimaryButton title="Back" onPress={() => router.back()} style={styles.stateButton} />
           </View>
         </AppBackground>
@@ -109,8 +122,8 @@ export default function NewBookingScreen() {
             <View style={styles.successIcon}>
               <MaterialCommunityIcons name="check-circle" size={56} color={COLORS.primary} />
             </View>
-            <AppText variant="heading" style={styles.stateTitle}>Booking sent!</AppText>
-            <AppText variant="body" style={styles.stateText}>
+            <AppText variant="heading" style={[styles.stateTitle, ds.stateTitle]}>Booking sent!</AppText>
+            <AppText variant="body" style={[styles.stateText, ds.stateText]}>
               {route.origin} → {route.destination}{"\n"}Your driver will confirm shortly.
             </AppText>
             <PrimaryButton title="Back to dashboard" onPress={() => router.replace("/passenger-dashboard")} style={styles.stateButton} />
@@ -129,8 +142,8 @@ export default function NewBookingScreen() {
           </Pressable>
 
           <AppText variant="caption" style={styles.eyebrow}>BOOK YOUR RIDE</AppText>
-          <AppText variant="title" style={styles.title}>{route.origin} → {route.destination}</AppText>
-          <AppText variant="body" style={styles.subtitle}>
+          <AppText variant="title" style={[styles.title, ds.title]}>{route.origin} → {route.destination}</AppText>
+          <AppText variant="body" style={[styles.subtitle, ds.subtitle]}>
             Book 1 seat on this route. Your driver will confirm the trip.
           </AppText>
 
@@ -139,8 +152,8 @@ export default function NewBookingScreen() {
               <MaterialCommunityIcons name="bus" size={28} color={COLORS.primary} />
             </View>
             <View style={styles.routeInfo}>
-              <AppText variant="heading" style={styles.routeTitle}>{route.origin} → {route.destination}</AppText>
-              <AppText variant="caption" style={styles.routeStops}>
+              <AppText variant="heading" style={[styles.routeTitle, ds.routeTitle]}>{route.origin} → {route.destination}</AppText>
+              <AppText variant="caption" style={[styles.routeStops, ds.routeStops]}>
                 {route.stops.length} {route.stops.length === 1 ? "stop" : "stops"} along the way
               </AppText>
             </View>

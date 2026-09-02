@@ -146,7 +146,7 @@ export default function ProfileScreen() {
           <Pressable onPress={() => void handlePickPhoto()}>
             <View style={styles.photoContainer}>
               {photoURL ? (
-                <Image source={{ uri: photoURL }} style={styles.photo} />
+                <Image source={{ uri: photoURL }} style={styles.photo} resizeMode="cover" />
               ) : (
                 <View style={[styles.photoPlaceholder, ds.photoPlaceholder]}>
                   <MaterialCommunityIcons name="account" size={48} color={COLORS.primary} />
