@@ -3,6 +3,8 @@ import { Animated, StyleSheet, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 import AppText from "./AppText";
+import { useThemeColors } from "../../contexts/ThemeContext";
+import { useMemo } from "react";
 import { COLORS, SPACING } from "../../theme";
 
 type StatCardProps = {
@@ -20,6 +22,12 @@ export default function StatCard({
   delay = 0,
   color = COLORS.primary,
 }: StatCardProps) {
+  const { colors } = useThemeColors();
+  const ds = useMemo(() => ({
+    value: { color: colors.text },
+    label: { color: colors.textSecondary },
+    card: { backgroundColor: colors.glass, borderColor: colors.glassBorder },
+  }), [colors]);
   const entrance = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -37,7 +45,7 @@ export default function StatCard({
   return (
     <Animated.View
       style={[
-        styles.card,
+        [styles.card, ds.card],
         {
           opacity: entrance,
           transform: [
@@ -60,10 +68,10 @@ export default function StatCard({
       <View style={[styles.iconWrap, { backgroundColor: color + "18" }]}>
         <MaterialCommunityIcons name={icon} size={20} color={color} />
       </View>
-      <AppText variant="heading" style={styles.value}>
+      <AppText variant="heading" style={[styles.value, ds.value]}>
         {value}
       </AppText>
-      <AppText variant="caption" style={styles.label}>
+      <AppText variant="caption" style={[styles.label, ds.label]}>
         {label}
       </AppText>
     </Animated.View>

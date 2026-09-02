@@ -3,6 +3,8 @@ import { Animated, StyleSheet, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 import AppText from "./AppText";
+import { useThemeColors } from "../../contexts/ThemeContext";
+import { useMemo } from "react";
 import { COLORS, SPACING } from "../../theme";
 
 type FeatureChipProps = {
@@ -12,6 +14,10 @@ type FeatureChipProps = {
 };
 
 export default function FeatureChip({ icon, label, delay = 0 }: FeatureChipProps) {
+  const { colors } = useThemeColors();
+  const ds = useMemo(() => ({
+    label: { color: colors.text },
+  }), [colors]);
   const entrance = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -44,7 +50,7 @@ export default function FeatureChip({ icon, label, delay = 0 }: FeatureChipProps
       <View style={styles.iconWrap}>
         <MaterialCommunityIcons name={icon} size={15} color={COLORS.primary} />
       </View>
-      <AppText variant="caption" style={styles.label}>
+      <AppText variant="caption" style={[styles.label, ds.label]}>
         {label}
       </AppText>
     </Animated.View>

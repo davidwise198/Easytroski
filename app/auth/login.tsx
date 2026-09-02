@@ -18,6 +18,8 @@ import PrimaryButton from "../../src/components/ui/PrimaryButton";
 import SectionTitle from "../../src/components/ui/SectionTitle";
 
 import { SPACING, COLORS } from "../../src/theme";
+import { useThemeColors } from "../../src/contexts/ThemeContext";
+import { useMemo } from "react";
 import { loginUser, loginWithGoogle } from "../../src/services/auth";
 import { getFriendlyError } from "../../src/utils/firebaseErrors";
 import { showToast } from "../../src/utils/toast";

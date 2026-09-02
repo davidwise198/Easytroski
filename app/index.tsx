@@ -10,11 +10,22 @@ import AppText from "../src/components/ui/AppText";
 import FeatureChip from "../src/components/ui/FeatureChip";
 import RoleActionCard from "../src/components/ui/RoleActionCard";
 import { COLORS, SPACING } from "../src/theme";
+import { useThemeColors } from "../src/contexts/ThemeContext";
+import { useMemo } from "react";
 import { useAuth } from "../src/contexts/AuthContext";
 
 export default function Index() {
   const insets = useSafeAreaInsets();
   const { user, userRole, loading } = useAuth();
+  const { colors } = useThemeColors();
+  const ds = useMemo(() => ({
+    brandName: { color: colors.text },
+    heroTitle: { color: colors.text },
+    subtitle: { color: colors.textSecondary },
+    actionsTitle: { color: colors.text },
+    actionsSubtitle: { color: colors.textSecondary },
+    loginLink: { color: colors.textSecondary },
+  }), [colors]);
 
   // Redirect logged-in users to their dashboard
   useEffect(() => {
@@ -71,18 +82,18 @@ export default function Index() {
         <Animated.View style={{ opacity: entrance, transform: [{ translateY: contentTransform }] }}>
           <View style={styles.brandRow}>
             <AnimatedBrandMark size={40} style={styles.logoMark} />
-            <AppText variant="heading" style={styles.brandName}>EasyTroski</AppText>
+            <AppText variant="heading" style={[styles.brandName, ds.brandName]}>EasyTroski</AppText>
             <View style={styles.statusDot} />
           </View>
 
           <View style={styles.hero}>
             <View style={styles.heroCopy}>
               <AppText variant="caption" style={styles.eyebrow}>MOVE WITH CONFIDENCE</AppText>
-              <AppText variant="title" style={styles.heroTitle}>
+              <AppText variant="title" style={[styles.heroTitle, ds.heroTitle]}>
                 Your next ride,
                 <AppText variant="title" style={styles.heroAccent}> made easy.</AppText>
               </AppText>
-              <AppText variant="body" style={styles.subtitle}>
+              <AppText variant="body" style={[styles.subtitle, ds.subtitle]}>
                 Reliable transport for every journey across Ghana.
               </AppText>
             </View>
@@ -124,8 +135,8 @@ export default function Index() {
 
           <View style={styles.actionsHeader}>
             <View>
-              <AppText variant="heading" style={styles.actionsTitle}>How are you riding?</AppText>
-              <AppText variant="caption" style={styles.actionsSubtitle}>Choose your EasyTroski experience</AppText>
+              <AppText variant="heading" style={[styles.actionsTitle, ds.actionsTitle]}>How are you riding?</AppText>
+              <AppText variant="caption" style={[styles.actionsSubtitle, ds.actionsSubtitle]}>Choose your EasyTroski experience</AppText>
             </View>
             <MaterialCommunityIcons name="gesture-tap" size={24} color={COLORS.accent} />
           </View>
@@ -148,7 +159,7 @@ export default function Index() {
             />
           </View>
 
-          <AppText variant="caption" style={styles.loginLink} onPress={() => router.push("/auth/login")}>
+          <AppText variant="caption" style={[styles.loginLink, ds.loginLink]} onPress={() => router.push("/auth/login")}>
             Already have an account? <AppText variant="caption" style={styles.loginAccent}>Sign in</AppText>
           </AppText>
         </Animated.View>

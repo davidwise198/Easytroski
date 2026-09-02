@@ -5,6 +5,8 @@ import { StatusBar } from "expo-status-bar";
 import AppBackground from "./AppBackground";
 import AnimatedBrandMark from "./AnimatedBrandMark";
 import AppText from "./AppText";
+import { useThemeColors } from "../../contexts/ThemeContext";
+import { useMemo } from "react";
 import { COLORS, SPACING } from "../../theme";
 
 type AppIntroProps = {
@@ -12,6 +14,12 @@ type AppIntroProps = {
 };
 
 export default function AppIntro({ onComplete }: AppIntroProps) {
+  const { colors } = useThemeColors();
+  const ds = useMemo(() => ({
+    title: { color: colors.text },
+    subtitle: { color: colors.textSecondary },
+    overlay: { backgroundColor: colors.background },
+  }), [colors]);
   const contentOpacity = useRef(new Animated.Value(0)).current;
   const contentTranslateY = useRef(new Animated.Value(12)).current;
 
@@ -33,7 +41,7 @@ export default function AppIntro({ onComplete }: AppIntroProps) {
   };
 
   return (
-    <View style={styles.overlay}>
+    <View style={[styles.overlay, ds.overlay]}>
       <StatusBar style="dark" />
       <AppBackground>
         <View style={styles.center}>
@@ -47,8 +55,8 @@ export default function AppIntro({ onComplete }: AppIntroProps) {
               },
             ]}
           >
-            <AppText variant="title" style={styles.title}>EasyTroski</AppText>
-            <AppText variant="body" style={styles.subtitle}>Move smarter. Ride easier.</AppText>
+            <AppText variant="title" style={[styles.title, ds.title]}>EasyTroski</AppText>
+            <AppText variant="body" style={[styles.subtitle, ds.subtitle]}>Move smarter. Ride easier.</AppText>
             <View style={styles.accentLine} />
             <AppText variant="caption" style={styles.location}>GHANA'S EVERYDAY RIDE</AppText>
           </Animated.View>

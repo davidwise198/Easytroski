@@ -1,66 +1,223 @@
-import React, { useEffect, useRef } from "react";
-import { Platform } from "react-native";
+import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import {
+  Animated,
+  Platform,
+  Pressable,
+  StyleSheet,
+  View,
+} from "react-native";
+import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Updates from "expo-updates";
 
-import { useToast } from "../contexts/ToastContext";
+import AppText from "./ui/AppText";
+import { useThemeColors } from "../contexts/ThemeContext";
 
-/**
- * Checks for OTA updates on app startup.
- * When an update is available, it shows a toast notification and reloads the app.
- *
- * This component should be rendered inside the ToastProvider.
- */
+// ---------------------------------------------------------------------------
+// Context so any screen can trigger a manual update check
+// ---------------------------------------------------------------------------
+
+type UpdateContextValue = {
+  /** Manually trigger an update check. */
+  checkForUpdate: () => Promise<void>;
+  /** Whether an update is currently being downloaded. */
+  isDownloading: boolean;
+  /** Whether a new update was found and is ready to restart. */
+  updateReady: boolean;
+};
+
+const UpdateContext = createContext<UpdateContextValue>({
+  checkForUpdate: async () => {},
+  isDownloading: false,
+  updateReady: false,
+});
+
+export function useUpdateChecker() {
+  return useContext(UpdateContext);
+}
+
+// ---------------------------------------------------------------------------
+// Provider + Banner
+// ---------------------------------------------------------------------------
+
 export default function UpdateChecker({ children }: { children: React.ReactNode }) {
-  const { showInfo, showSuccess, showError } = useToast();
+  const { colors } = useThemeColors();
+  const [bannerVisible, setBannerVisible] = useState(false);
+  const [bannerMessage, setBannerMessage] = useState("");
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [updateReady, setUpdateReady] = useState(false);
+  const bannerOpacity = useRef(new Animated.Value(0)).current;
   const hasChecked = useRef(false);
 
+  const showBanner = useCallback(
+    (msg: string) => {
+      setBannerMessage(msg);
+      setBannerVisible(true);
+      Animated.spring(bannerOpacity, {
+        toValue: 1,
+        friction: 8,
+        tension: 60,
+        useNativeDriver: true,
+      }).start();
+    },
+    [bannerOpacity],
+  );
+
+  const hideBanner = useCallback(() => {
+    Animated.timing(bannerOpacity, {
+      toValue: 0,
+      duration: 200,
+      useNativeDriver: true,
+    }).start(() => setBannerVisible(false));
+  }, [bannerOpacity]);
+
+  const applyUpdate = useCallback(async () => {
+    setUpdateReady(false);
+    hideBanner();
+    try {
+      await Updates.reloadAsync();
+    } catch {
+      // ignore
+    }
+  }, [hideBanner]);
+
+  const checkForUpdate = useCallback(async () => {
+    try {
+      if (__DEV__) {
+        showBanner("Updates are not checked in development mode.");
+        setTimeout(hideBanner, 3000);
+        return;
+      }
+
+      showBanner("Checking for updates…");
+
+      const update = await Updates.checkForUpdateAsync();
+
+      if (update.isAvailable) {
+        showBanner("New version found — downloading…");
+        setIsDownloading(true);
+
+        const { isNew } = await Updates.fetchUpdateAsync();
+        setIsDownloading(false);
+
+        if (isNew) {
+          setUpdateReady(true);
+          showBanner("Update ready! Tap to restart.");
+        } else {
+          showBanner("You're up to date!");
+          setTimeout(hideBanner, 2500);
+        }
+      } else {
+        showBanner("You're up to date!");
+        setTimeout(hideBanner, 2500);
+      }
+    } catch (error) {
+      setIsDownloading(false);
+      showBanner("Could not check for updates.");
+      setTimeout(hideBanner, 3000);
+    }
+  }, [showBanner, hideBanner]);
+
+  // Auto-check on mount (once per session)
   useEffect(() => {
-    // Only check once per app session
     if (hasChecked.current) return;
     hasChecked.current = true;
-
-    async function checkForUpdates() {
-      try {
-        // Skip update checks in development (Metro bundler)
-        if (__DEV__) return;
-
-        const update = await Updates.checkForUpdateAsync();
-
-        if (update.isAvailable) {
-          // Show info toast that an update is available
-          showInfo(
-            "Update Available",
-            "A new version is being downloaded..."
-          );
-
-          // Download and apply the update
-          const { isNew } = await Updates.fetchUpdateAsync();
-
-          if (isNew) {
-            showSuccess(
-              "Update Downloaded",
-              "Restarting to apply the update..."
-            );
-
-            // Small delay so the user can see the toast
-            setTimeout(() => {
-              Updates.reloadAsync();
-            }, 1500);
-          }
-        }
-      } catch (error) {
-        // Silently fail — don't block the app if update check fails
-        if (__DEV__) {
-          console.warn("[UpdateChecker] Failed to check for updates:", error);
-        }
-      }
-    }
-
-    // Delay the check slightly so the app finishes loading first
-    const timer = setTimeout(checkForUpdates, 2000);
-
+    const timer = setTimeout(checkForUpdate, 2500);
     return () => clearTimeout(timer);
-  }, [showInfo, showSuccess, showError]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  return <>{children}</>;
+  return (
+    <UpdateContext.Provider value={{ checkForUpdate, isDownloading, updateReady }}>
+      {children}
+
+      {/* ── Update banner ── */}
+      {bannerVisible && (
+        <Animated.View
+          style={[
+            styles.banner,
+            {
+              opacity: bannerOpacity,
+              backgroundColor: updateReady ? colors.primary : colors.surface,
+              borderColor: updateReady ? colors.primary : colors.glassBorder,
+            },
+          ]}
+        >
+          <MaterialCommunityIcons
+            name={updateReady ? "rocket-launch" : isDownloading ? "cloud-download" : "information"}
+            size={18}
+            color={updateReady ? colors.white : colors.primary}
+          />
+          <AppText
+            variant="caption"
+            style={[
+              styles.bannerText,
+              { color: updateReady ? colors.white : colors.text },
+            ]}
+          >
+            {bannerMessage}
+          </AppText>
+          {updateReady ? (
+            <Pressable style={styles.bannerAction} onPress={applyUpdate}>
+              <AppText variant="caption" style={styles.bannerActionText}>
+                Restart
+              </AppText>
+            </Pressable>
+          ) : (
+            <Pressable style={styles.bannerClose} onPress={hideBanner}>
+              <MaterialCommunityIcons
+                name="close"
+                size={16}
+                color={colors.textSecondary}
+              />
+            </Pressable>
+          )}
+        </Animated.View>
+      )}
+    </UpdateContext.Provider>
+  );
 }
+
+// ---------------------------------------------------------------------------
+// Styles
+// ---------------------------------------------------------------------------
+
+const styles = StyleSheet.create({
+  banner: {
+    position: "absolute",
+    top: Platform.OS === "ios" ? 56 : 40,
+    left: 16,
+    right: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 6,
+    zIndex: 9999,
+  },
+  bannerText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  bannerAction: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 10,
+    backgroundColor: "rgba(255,255,255,0.25)",
+  },
+  bannerActionText: {
+    color: "#FFFFFF",
+    fontWeight: "700",
+    fontSize: 12,
+  },
+  bannerClose: {
+    padding: 4,
+  },
+});

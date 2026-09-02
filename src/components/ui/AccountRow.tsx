@@ -3,6 +3,8 @@ import { StyleSheet, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 
 import AppText from "./AppText";
+import { useThemeColors } from "../../contexts/ThemeContext";
+import { useMemo } from "react";
 import { COLORS, SPACING } from "../../theme";
 
 type AccountRowProps = {
@@ -12,16 +14,22 @@ type AccountRowProps = {
 };
 
 export default function AccountRow({ icon, label, value }: AccountRowProps) {
+  const { colors } = useThemeColors();
+  const ds = useMemo(() => ({
+    label: { color: colors.textSecondary },
+    value: { color: colors.text },
+    iconWrap: { backgroundColor: colors.blueWash },
+  }), [colors]);
   return (
     <View style={styles.row}>
-      <View style={styles.iconWrap}>
+      <View style={[styles.iconWrap, ds.iconWrap]}>
         <MaterialCommunityIcons name={icon} size={17} color={COLORS.primary} />
       </View>
       <View style={styles.copy}>
-        <AppText variant="caption" style={styles.label}>
+        <AppText variant="caption" style={[styles.label, ds.label]}>
           {label}
         </AppText>
-        <AppText variant="body" style={styles.value}>
+        <AppText variant="body" style={[styles.value, ds.value]}>
           {value}
         </AppText>
       </View>
