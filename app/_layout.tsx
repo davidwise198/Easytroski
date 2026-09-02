@@ -8,6 +8,7 @@ import ThemeProvider from "../src/contexts/ThemeContext";
 import { ToastProvider } from "../src/contexts/ToastContext";
 import ErrorBoundary from "../src/components/ui/ErrorBoundary";
 import AppIntro from "../src/components/ui/AppIntro";
+import UpdateChecker from "../src/components/UpdateChecker";
 
 SplashScreen.preventAutoHideAsync().catch(() => {
   // The native splash may already be hidden in Expo Go.
@@ -42,7 +43,9 @@ export default function RootLayout() {
         <AuthProvider>
           <LocationProvider>
             <ToastProvider>
-              <RootLayoutNav />
+              <UpdateChecker>
+                <RootLayoutNav />
+              </UpdateChecker>
             </ToastProvider>
           </LocationProvider>
         </AuthProvider>
