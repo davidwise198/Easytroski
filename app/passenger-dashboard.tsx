@@ -208,7 +208,7 @@ export default function PassengerDashboardScreen() {
             <View style={styles.header}>
               <View style={styles.headerLeft}>
                 <AppText variant="caption" style={styles.eyebrow}>
-                  PASSENGER
+                  PASSENGER ✨
                 </AppText>
                 <AppText variant="title" style={[styles.greeting, ds.greeting]}>
                   {greeting},
