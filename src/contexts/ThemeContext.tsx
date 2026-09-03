@@ -113,7 +113,11 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
 
   const value = useMemo(
     () => ({
-      colors: isDark ? COLORS_DARK : COLORS,
+      // Always return a stable snapshot — never the mutable COLORS object.
+      // COLORS gets mutated by syncColors for inline JSX references, but
+      // returning it here causes ds hooks to compute with stale values
+      // during the frame between theme switch and useEffect sync.
+      colors: isDark ? COLORS_DARK : (LIGHT_SNAPSHOT as ColorPalette),
       isDark,
       themeMode,
       setThemeMode,
