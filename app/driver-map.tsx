@@ -85,6 +85,22 @@ export default function DriverMapScreen() {
     bookingCard: { backgroundColor: colors.veryLightBlue },
     bookingIcon: { backgroundColor: colors.white },
     trackingBadge: { backgroundColor: colors.veryLightBlue },
+    permissionText: { color: colors.textSecondary },
+    sectionLabel: { color: colors.textSecondary },
+    pickupLabelText: { color: colors.white },
+    panelSubtitle: { color: colors.textSecondary },
+    trackingText: { color: colors.textSecondary },
+    tripStatusText: { color: colors.textSecondary },
+    tripTime: { color: colors.textSecondary },
+    bookingCardItem: { backgroundColor: colors.veryLightBlue },
+    emptyBookings: { color: colors.textSecondary },
+    bookingPassenger: { color: colors.text },
+    bookingSeats: { color: colors.textSecondary },
+    bookingRoute: { color: colors.textSecondary },
+    emptyText: { color: colors.textSecondary },
+    bookingSubtitle: { color: colors.textSecondary },
+    bookingStatusText: { color: colors.white },
+    bookingSeatsInline: { color: colors.textSecondary },
   }), [colors]);
   const {
     status: permissionStatus,
@@ -375,7 +391,7 @@ export default function DriverMapScreen() {
                 <MaterialCommunityIcons name="account-circle" size={20} color={COLORS.white} />
               </View>
               <View style={styles.pickupLabel}>
-                <AppText variant="caption" style={styles.pickupLabelText} numberOfLines={1}>
+                <AppText variant="caption" style={[styles.pickupLabelText, ds.pickupLabelText]} numberOfLines={1}>
                   {pickup.passengerName}
                 </AppText>
               </View>
@@ -405,7 +421,7 @@ export default function DriverMapScreen() {
         {permissionStatus === "denied" && (
           <Pressable style={[styles.permissionBanner, ds.permissionBanner]} onPress={() => requestPermission()}>
             <MaterialCommunityIcons name="map-marker-alert-outline" size={18} color={COLORS.warning} />
-            <AppText variant="caption" style={styles.permissionText}>
+            <AppText variant="caption" style={[styles.permissionText, ds.permissionText]}>
               {deniedMessage || "Location needed for trip tracking"}
             </AppText>
           </Pressable>
@@ -414,7 +430,7 @@ export default function DriverMapScreen() {
         {/* ---- Route selector (only when no active trip) ---- */}
         {!hasActiveTrip && (
           <View style={styles.routeSelector}>
-            <AppText variant="caption" style={styles.sectionLabel}>SELECT YOUR ROUTE</AppText>
+            <AppText variant="caption" style={[styles.sectionLabel, ds.sectionLabel]}>SELECT YOUR ROUTE</AppText>
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
@@ -457,7 +473,7 @@ export default function DriverMapScreen() {
                 </View>
                 <View style={styles.panelCopy}>
                   <AppText variant="heading" style={[styles.panelTitle, ds.panelTitle]}>Ready to go?</AppText>
-                  <AppText variant="caption" style={styles.panelSubtitle}>
+                  <AppText variant="caption" style={[styles.panelSubtitle, ds.panelSubtitle]}>
                     {selectedRouteId
                       ? "Start your trip to become visible to passengers"
                       : "Choose a route above to start your trip"}
@@ -468,7 +484,7 @@ export default function DriverMapScreen() {
               {isTripActive && location && (
                 <View style={[styles.trackingBadge, ds.trackingBadge]}>
                   <View style={styles.trackingDot} />
-                  <AppText variant="caption" style={styles.trackingText}>
+                  <AppText variant="caption" style={[styles.trackingText, ds.trackingText]}>
                     Live tracking active — updating every 15s
                   </AppText>
                 </View>
@@ -492,11 +508,11 @@ export default function DriverMapScreen() {
                   ]}
                 >
                   <View style={styles.trackingDotSmall} />
-                  <AppText variant="caption" style={styles.tripStatusText}>
+                  <AppText variant="caption" style={[styles.tripStatusText, ds.tripStatusText]}>
                     {tripStatusLabel(activeTrip.status)}
                   </AppText>
                 </View>
-                <AppText variant="caption" style={styles.tripTime}>
+                <AppText variant="caption" style={[styles.tripTime, ds.tripTime]}>
                   {activeTrip.startTime
                     ? `Started ${new Date(activeTrip.startTime).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
                     : "Just started"}
@@ -505,7 +521,7 @@ export default function DriverMapScreen() {
 
               {/* Seat counter */}
               <View style={[styles.seatCounterRow, ds.seatCounterRow]}>
-                <AppText variant="caption" style={styles.sectionLabel}>AVAILABLE SEATS</AppText>
+                <AppText variant="caption" style={[styles.sectionLabel, ds.sectionLabel]}>AVAILABLE SEATS</AppText>
                 <View style={styles.seatCounterControls}>
                   <Pressable
                     style={[styles.seatBtn, ds.seatBtn]}
@@ -525,13 +541,13 @@ export default function DriverMapScreen() {
 
               {/* Bookings list */}
               <View style={styles.bookingsSection}>
-                <AppText variant="caption" style={styles.sectionLabel}>
+                <AppText variant="caption" style={[styles.sectionLabel, ds.sectionLabel]}>
                   PASSENGER BOOKINGS ({bookings.length})
                 </AppText>
                 {bookings.length === 0 ? (
                   <View style={styles.emptyBookings}>
                     <MaterialCommunityIcons name="account-clock-outline" size={28} color={COLORS.textSecondary} />
-                    <AppText variant="body" style={styles.emptyText}>
+                    <AppText variant="body" style={[styles.emptyText, ds.emptyText]}>
                       No bookings yet. Passengers will appear here as they book.
                     </AppText>
                   </View>
@@ -545,11 +561,8 @@ export default function DriverMapScreen() {
                         <AppText variant="heading" style={[styles.bookingTitle, ds.bookingTitle]}>
                           {booking.passengerName || "Passenger"}
                         </AppText>
-                        <AppText variant="caption" style={styles.bookingSubtitle}>
+                        <AppText variant="caption" style={[styles.bookingSubtitle, ds.bookingSubtitle]}>
                           {booking.pickupLocation?.address || "Pickup"} → {booking.dropOffLocation?.address || "Drop-off"}
-                        </AppText>
-                        <AppText variant="caption" style={styles.bookingSubtitle}>
-                          → {booking.dropOffLocation?.address || "Drop-off point"}
                         </AppText>
                         <View style={styles.bookingStatusRow}>
                           <View style={[styles.bookingStatusBadge, { backgroundColor: booking.status === "confirmed" ? COLORS.success : booking.status === "cancelled" ? COLORS.danger : booking.status === "completed" ? COLORS.primary : COLORS.warning }]}>

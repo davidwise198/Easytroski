@@ -1,13 +1,23 @@
-import React, { createContext, useContext, useEffect, useMemo } from "react";
-import { useColorScheme } from "react-native";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import { Appearance, Platform } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { COLORS, COLORS_DARK, type ColorPalette } from "../theme/colors";
+
+// ---------------------------------------------------------------------------
+// Theme mode: "system" | "light" | "dark"
+// ---------------------------------------------------------------------------
+
+export type ThemeMode = "system" | "light" | "dark";
+
+const THEME_STORAGE_KEY = "@easytroski/theme-mode";
 
 // ---------------------------------------------------------------------------
 // Sync the mutable COLORS object in-place when the theme changes.
 // This fixes ALL runtime references to COLORS.navy, COLORS.textSecondary, etc.
 // across every screen — no per-component overrides needed for inline styles.
 // ---------------------------------------------------------------------------
+
 const LIGHT_SNAPSHOT: Record<string, string> = { ...COLORS };
 
 function syncColors(isDark: boolean) {
@@ -17,35 +27,98 @@ function syncColors(isDark: boolean) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Determine system dark mode
+// ---------------------------------------------------------------------------
+
+function getSystemIsDark(): boolean {
+  return Appearance.getColorScheme() === "dark";
+}
+
+// ---------------------------------------------------------------------------
+// Context
+// ---------------------------------------------------------------------------
+
 type ThemeContextValue = {
   colors: ColorPalette;
   isDark: boolean;
+  /** Current theme mode preference: "system" | "light" | "dark" */
+  themeMode: ThemeMode;
+  /** Set the theme mode preference */
+  setThemeMode: (mode: ThemeMode) => void;
 };
 
 const ThemeContext = createContext<ThemeContextValue>({
   colors: COLORS,
   isDark: false,
+  themeMode: "system",
+  setThemeMode: () => {},
 });
 
 export function useThemeColors() {
   return useContext(ThemeContext);
 }
 
+// ---------------------------------------------------------------------------
+// Provider
+// ---------------------------------------------------------------------------
+
 export default function ThemeProvider({ children }: { children: React.ReactNode }) {
-  const colorScheme = useColorScheme();
-  const isDark = colorScheme === "dark";
+  const [themeMode, setThemeModeState] = useState<ThemeMode>("system");
+  const [systemIsDark, setSystemIsDark] = useState<boolean>(getSystemIsDark);
+
+  // Load saved theme preference on mount
+  useEffect(() => {
+    AsyncStorage.getItem(THEME_STORAGE_KEY).then((saved) => {
+      if (saved === "light" || saved === "dark" || saved === "system") {
+        setThemeModeState(saved);
+      }
+    });
+  }, []);
+
+  // Listen for system appearance changes (critical for Android)
+  useEffect(() => {
+    const subscription = Appearance.addChangeListener(({ colorScheme }) => {
+      setSystemIsDark(colorScheme === "dark");
+    });
+    return () => subscription?.remove();
+  }, []);
+
+  const setThemeMode = useCallback((mode: ThemeMode) => {
+    setThemeModeState(mode);
+    AsyncStorage.setItem(THEME_STORAGE_KEY, mode);
+  }, []);
+
+  // Resolve actual dark mode from preference
+  const isDark = useMemo(() => {
+    switch (themeMode) {
+      case "dark":
+        return true;
+      case "light":
+        return false;
+      case "system":
+      default:
+        return systemIsDark;
+    }
+  }, [themeMode, systemIsDark]);
 
   // Mutate COLORS in-place so every import sees the current palette
   useEffect(() => {
     syncColors(isDark);
+    // Also set the native Appearance for Android system UI
+    if (Platform.OS === "android") {
+      Appearance.setColorScheme(isDark ? "dark" : "light");
+    }
   }, [isDark]);
 
   const value = useMemo(
     () => ({
       colors: isDark ? COLORS_DARK : COLORS,
       isDark,
+      themeMode,
+      setThemeMode,
     }),
-    [isDark],
+    [isDark, themeMode, setThemeMode],
   );
 
   return (

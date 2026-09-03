@@ -20,6 +20,7 @@ import { useThemeColors } from "../src/contexts/ThemeContext";
 import { getUserProfile, getPhotoURL } from "../src/services/profile";
 import { COLORS, SPACING } from "../src/theme";
 import { useMemo } from "react";
+import ThemeToggle from "../src/components/ui/ThemeToggle";
 
 // ---------------------------------------------------------------------------
 // Animated wrapper for staggered entrance
@@ -218,24 +219,27 @@ export default function PassengerDashboardScreen() {
                 </AppText>
               </View>
 
-              <Pressable
-                onPress={() => router.push("/profile")}
-                style={({ pressed }) => [pressed && { transform: [{ scale: 0.9 }] }]}
-              >
-                <Animated.View style={[[styles.avatar, ds.avatar], { transform: [{ scale: pulse }] }]}>
-                  {photoURL ? (
-                    <Image source={{ uri: photoURL }} style={styles.avatarImage} resizeMode="cover" />
-                  ) : (
-                    <View style={styles.avatarPlaceholder}>
-                      <MaterialCommunityIcons
-                        name="account"
-                        size={28}
-                        color={COLORS.primary}
-                      />
-                    </View>
-                  )}
-                </Animated.View>
-              </Pressable>
+              <View style={styles.headerRight}>
+                <ThemeToggle />
+                <Pressable
+                  onPress={() => router.push("/profile")}
+                  style={({ pressed }) => [pressed && { transform: [{ scale: 0.9 }] }]}
+                >
+                  <Animated.View style={[[styles.avatar, ds.avatar], { transform: [{ scale: pulse }] }]}>
+                    {photoURL ? (
+                      <Image source={{ uri: photoURL }} style={styles.avatarImage} resizeMode="cover" />
+                    ) : (
+                      <View style={styles.avatarPlaceholder}>
+                        <MaterialCommunityIcons
+                          name="account"
+                          size={28}
+                          color={COLORS.primary}
+                        />
+                      </View>
+                    )}
+                  </Animated.View>
+                </Pressable>
+              </View>
             </View>
           </FadeSlideIn>
 
@@ -369,6 +373,10 @@ const styles = StyleSheet.create({
     marginBottom: SPACING.xl,
   },
   headerLeft: { flex: 1 },
+  headerRight: {
+    alignItems: "flex-end",
+    gap: 8,
+  },
   eyebrow: {
     color: COLORS.primary,
     fontSize: 10,

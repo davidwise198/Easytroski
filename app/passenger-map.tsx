@@ -89,6 +89,17 @@ export default function PassengerMapScreen() {
     vehicleInfoCard: { backgroundColor: colors.veryLightBlue },
     sheetInfo: { borderColor: colors.veryLightBlue },
     iconButton: { backgroundColor: colors.blueWash },
+    permissionText: { color: colors.textSecondary },
+    editSeatsLabel: { color: colors.textSecondary },
+    vehicleInfoLabel: { color: colors.textSecondary },
+    sheetInfoValue: { color: colors.text },
+    sheetInfoLabel: { color: colors.textSecondary },
+    ratingSubtitle: { color: colors.textSecondary },
+    ratingSkip: { color: colors.textSecondary },
+    approachingText: { color: colors.success },
+    busStopText: { color: colors.primary },
+    sheetStatusText: { color: colors.white },
+    chipTextSelected: { color: colors.white },
   }), [colors]);
   const params = useLocalSearchParams<{ routeId?: string }>();
   const {
@@ -412,7 +423,7 @@ export default function PassengerMapScreen() {
         {permissionStatus === "denied" && (
           <Pressable style={[styles.permissionBanner, ds.permissionBanner]} onPress={() => requestPermission()}>
             <MaterialCommunityIcons name="map-marker-alert-outline" size={18} color={COLORS.warning} />
-            <AppText variant="caption" style={styles.permissionText}>
+            <AppText variant="caption" style={[styles.permissionText, ds.permissionText]}>
               {deniedMessage || "Location permission needed for nearby routes"}
             </AppText>
           </Pressable>
@@ -476,20 +487,18 @@ export default function PassengerMapScreen() {
         {/* ---- Driver approaching notification ---- */}
         {driverApproaching && lastBookingStatus === "confirmed" && (
           <View style={[styles.approachingBanner, { top: 240 }]}>
-            <MaterialCommunityIcons name="bus-alert" size={18} color={COLORS.success} />
-            <AppText variant="caption" style={styles.approachingText}>
-              Your driver is approaching! Get ready.
-            </AppText>
+            <MaterialCommunityIcons name="bus-alert" size={18} color={COLORS.success} />              <AppText variant="caption" style={[styles.approachingText, ds.approachingText]}>
+                  Your driver is approaching! Get ready.
+                </AppText>
           </View>
         )}
 
         {/* ---- Bus stop warning after booking ---- */}
         {lastBookingId && (lastBookingStatus === "pending" || lastBookingStatus === "confirmed") && !driverApproaching && (
           <View style={[styles.busStopBanner, { top: driverApproaching ? 290 : 240 }]}>
-            <MaterialCommunityIcons name="bus-stop" size={18} color={COLORS.primary} />
-            <AppText variant="caption" style={styles.busStopText}>
-              Please stand by the nearest bus stop for easy pickup.
-            </AppText>
+            <MaterialCommunityIcons name="bus-stop" size={18} color={COLORS.primary} />              <AppText variant="caption" style={[styles.busStopText, ds.busStopText]}>
+                  Please stand by the nearest bus stop for easy pickup.
+                </AppText>
           </View>
         )}
 
@@ -544,7 +553,7 @@ export default function PassengerMapScreen() {
           {/* Edit seats inline */}
           {editingSeats && lastBookingStatus !== "cancelled" && (
             <View style={[styles.editSeatsRow, ds.editSeatsRow]}>
-              <AppText variant="caption" style={styles.editSeatsLabel}>Seats:</AppText>
+              <AppText variant="caption" style={[styles.editSeatsLabel, ds.editSeatsLabel]}>Seats:</AppText>
               <Pressable
                 style={styles.seatEditBtn}
                 onPress={() => { if (bookingSeats > 1) setBookingSeats(bookingSeats - 1); }}
@@ -624,7 +633,7 @@ export default function PassengerMapScreen() {
               <View style={[styles.vehicleInfoCard, ds.vehicleInfoCard]}>
                 <View style={styles.vehicleInfoRow}>
                   <MaterialCommunityIcons name="steering" size={16} color={COLORS.primary} />
-                  <AppText variant="caption" style={styles.vehicleInfoLabel}>Driver</AppText>
+                  <AppText variant="caption" style={[styles.vehicleInfoLabel, ds.vehicleInfoLabel]}>Driver</AppText>
                   <AppText variant="heading" style={[styles.vehicleInfoValue, ds.vehicleInfoValue]}>
                     {selectedMarker.trip.driverName || "Driver"}
                   </AppText>
@@ -632,7 +641,7 @@ export default function PassengerMapScreen() {
                 {selectedMarker.trip.vehiclePlate && (
                   <View style={styles.vehicleInfoRow}>
                     <MaterialCommunityIcons name="car" size={16} color={COLORS.primary} />
-                    <AppText variant="caption" style={styles.vehicleInfoLabel}>Plate</AppText>
+                    <AppText variant="caption" style={[styles.vehicleInfoLabel, ds.vehicleInfoLabel]}>Plate</AppText>
                     <AppText variant="heading" style={[styles.vehicleInfoValue, ds.vehicleInfoValue]}>
                       {selectedMarker.trip.vehiclePlate}
                     </AppText>
@@ -641,7 +650,7 @@ export default function PassengerMapScreen() {
                 {(selectedMarker.trip.vehicleColor || selectedMarker.trip.vehicleBrand) && (
                   <View style={styles.vehicleInfoRow}>
                     <MaterialCommunityIcons name="palette" size={16} color={COLORS.primary} />
-                    <AppText variant="caption" style={styles.vehicleInfoLabel}>Vehicle</AppText>
+                    <AppText variant="caption" style={[styles.vehicleInfoLabel, ds.vehicleInfoLabel]}>Vehicle</AppText>
                     <AppText variant="heading" style={[styles.vehicleInfoValue, ds.vehicleInfoValue]}>
                       {[selectedMarker.trip.vehicleColor, selectedMarker.trip.vehicleBrand].filter(Boolean).join(" ")}
                     </AppText>
@@ -658,10 +667,10 @@ export default function PassengerMapScreen() {
                     color={COLORS.primary}
                   />
                   <View>
-                    <AppText variant="heading" style={styles.sheetInfoValue}>
+                    <AppText variant="heading" style={[styles.sheetInfoValue, ds.sheetInfoValue]}>
                       {selectedMarker.availableSeats}
                     </AppText>
-                    <AppText variant="caption" style={styles.sheetInfoLabel}>
+                    <AppText variant="caption" style={[styles.sheetInfoLabel, ds.sheetInfoLabel]}>
                       seats left
                     </AppText>
                   </View>
@@ -674,10 +683,10 @@ export default function PassengerMapScreen() {
                       color={COLORS.textSecondary}
                     />
                     <View>
-                      <AppText variant="heading" style={styles.sheetInfoValue}>
+                      <AppText variant="heading" style={[styles.sheetInfoValue, ds.sheetInfoValue]}>
                         {selectedMarker.trip.vehicleCapacity}
                       </AppText>
-                      <AppText variant="caption" style={styles.sheetInfoLabel}>
+                      <AppText variant="caption" style={[styles.sheetInfoLabel, ds.sheetInfoLabel]}>
                         capacity
                       </AppText>
                     </View>
@@ -716,7 +725,7 @@ export default function PassengerMapScreen() {
             <View style={[styles.ratingCard, ds.ratingCard]}>
               <MaterialCommunityIcons name="star-circle" size={48} color={COLORS.accent} />
               <AppText variant="heading" style={[styles.ratingTitle, ds.ratingTitle]}>Rate your trip</AppText>
-              <AppText variant="body" style={styles.ratingSubtitle}>How was your ride?</AppText>
+              <AppText variant="body" style={[styles.ratingSubtitle, ds.ratingSubtitle]}>How was your ride?</AppText>
               <StarRating value={ratingValue} onChange={setRatingValue} size={40} />
               <PrimaryButton
                 title={submittingRating ? "Submitting..." : "Submit rating"}
@@ -725,7 +734,7 @@ export default function PassengerMapScreen() {
                 style={styles.ratingSubmitBtn}
               />
               <Pressable onPress={() => { setShowRating(false); setRatingValue(0); }}>
-                <AppText variant="caption" style={styles.ratingSkip}>Skip for now</AppText>
+                <AppText variant="caption" style={[styles.ratingSkip, ds.ratingSkip]}>Skip for now</AppText>
               </Pressable>
             </View>
           </View>

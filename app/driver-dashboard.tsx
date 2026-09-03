@@ -21,6 +21,7 @@ import AuthGate from "../src/components/AuthGate";
 import { useAuth } from "../src/contexts/AuthContext";
 import { useThemeColors } from "../src/contexts/ThemeContext";
 import { useMemo } from "react";
+import ThemeToggle from "../src/components/ui/ThemeToggle";
 import {
   getActiveRoutes,
   getDriverActiveTrip,
@@ -361,22 +362,25 @@ export default function DriverDashboardScreen() {
                   {displayName} 👋
                 </AppText>
               </View>
-              <Pressable
-                onPress={() => router.push("/profile")}
-                style={({ pressed }) => [pressed && { opacity: 0.7 }]}
-              >
-                <View style={styles.driverIcon}>
-                  {photoURL ? (
-                    <Image source={{ uri: photoURL }} style={styles.driverPhoto} resizeMode="cover" />
-                  ) : (
-                    <MaterialCommunityIcons
-                      name="account"
-                      size={25}
-                      color={COLORS.primary}
-                    />
-                  )}
-                </View>
-              </Pressable>
+              <View style={styles.headerRight}>
+                <ThemeToggle />
+                <Pressable
+                  onPress={() => router.push("/profile")}
+                  style={({ pressed }) => [pressed && { opacity: 0.7 }]}
+                >
+                  <View style={styles.driverIcon}>
+                    {photoURL ? (
+                      <Image source={{ uri: photoURL }} style={styles.driverPhoto} resizeMode="cover" />
+                    ) : (
+                      <MaterialCommunityIcons
+                        name="account"
+                        size={25}
+                        color={COLORS.primary}
+                      />
+                    )}
+                  </View>
+                </Pressable>
+              </View>
             </View>
           </FadeSlideIn>
 
@@ -632,6 +636,10 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "flex-start",
     marginBottom: SPACING.xl,
+  },
+  headerRight: {
+    alignItems: "flex-end",
+    gap: 8,
   },
   eyebrow: {
     color: COLORS.primary,

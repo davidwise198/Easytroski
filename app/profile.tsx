@@ -17,6 +17,7 @@ import GlassInput from "../src/components/ui/GlassInput";
 import PrimaryButton from "../src/components/ui/PrimaryButton";
 import { useAuth } from "../src/contexts/AuthContext";
 import { useThemeColors } from "../src/contexts/ThemeContext";
+import ThemeToggle from "../src/components/ui/ThemeToggle";
 import { useMemo } from "react";
 import {
   getUserProfile,
@@ -138,8 +139,13 @@ export default function ProfileScreen() {
         <Pressable style={[styles.backBtn, ds.backBtn]} onPress={() => router.back()}>
           <MaterialCommunityIcons name="arrow-left" size={22} color={COLORS.primary} />
         </Pressable>
-        <AppText variant="caption" style={styles.eyebrow}>PROFILE</AppText>
-        <AppText variant="title" style={[styles.title, ds.title]}>My Account</AppText>
+        <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <View>
+            <AppText variant="caption" style={styles.eyebrow}>PROFILE</AppText>
+            <AppText variant="title" style={[styles.title, ds.title]}>My Account</AppText>
+          </View>
+          <ThemeToggle />
+        </View>
 
         {/* Photo */}
         <View style={styles.photoSection}>

@@ -23,12 +23,15 @@ type UpdateContextValue = {
   isDownloading: boolean;
   /** Whether a new update was found and is ready to restart. */
   updateReady: boolean;
+  /** Status message for display */
+  statusMessage: string;
 };
 
 const UpdateContext = createContext<UpdateContextValue>({
   checkForUpdate: async () => {},
   isDownloading: false,
   updateReady: false,
+  statusMessage: "",
 });
 
 export function useUpdateChecker() {
@@ -45,6 +48,7 @@ export default function UpdateChecker({ children }: { children: React.ReactNode 
   const [bannerMessage, setBannerMessage] = useState("");
   const [isDownloading, setIsDownloading] = useState(false);
   const [updateReady, setUpdateReady] = useState(false);
+  const [statusMessage, setStatusMessage] = useState("");
   const bannerOpacity = useRef(new Animated.Value(0)).current;
   const hasChecked = useRef(false);
 
@@ -83,19 +87,17 @@ export default function UpdateChecker({ children }: { children: React.ReactNode 
   const checkForUpdate = useCallback(async () => {
     try {
       // In dev mode (Expo Go / expo start), OTA updates are not available.
-      // Show a brief notice instead of silently doing nothing.
       if (__DEV__) {
-        showBanner("Running in development — OTA updates disabled.");
-        setTimeout(hideBanner, 2500);
+        setStatusMessage("Dev mode — OTA updates not available");
         return;
       }
 
-      showBanner("Checking for updates…");
+      setStatusMessage("Checking for updates…");
 
       const update = await Updates.checkForUpdateAsync();
 
       if (update.isAvailable) {
-        showBanner("New version found — downloading…");
+        setStatusMessage("Downloading update…");
         setIsDownloading(true);
 
         const { isNew } = await Updates.fetchUpdateAsync();
@@ -103,36 +105,44 @@ export default function UpdateChecker({ children }: { children: React.ReactNode 
 
         if (isNew) {
           setUpdateReady(true);
+          setStatusMessage("Update ready!");
           showBanner("Update ready! Tap to restart.");
         } else {
+          setStatusMessage("Up to date");
           showBanner("You're up to date!");
           setTimeout(hideBanner, 2500);
         }
       } else {
+        setStatusMessage("Up to date");
         showBanner("You're up to date!");
         setTimeout(hideBanner, 2500);
       }
     } catch (error) {
       setIsDownloading(false);
-      // Only show error banner for non-dev builds
-      if (!__DEV__) {
-        showBanner("Could not check for updates.");
-        setTimeout(hideBanner, 3000);
+      // Silently handle — don't show alarming error banner on every launch
+      // The update check failing is expected in many scenarios (no network, dev builds, etc.)
+      setStatusMessage("Update check unavailable");
+      if (__DEV__) {
+        // Don't show banner at all in dev mode
+        return;
       }
+      // Only show a subtle notice in production, and auto-dismiss quickly
+      showBanner("Update check skipped — will retry next time.");
+      setTimeout(hideBanner, 2000);
     }
   }, [showBanner, hideBanner]);
 
-  // Auto-check on mount (once per session)
+  // Auto-check on mount (once per session) — longer delay to not interfere with splash
   useEffect(() => {
     if (hasChecked.current) return;
     hasChecked.current = true;
-    const timer = setTimeout(checkForUpdate, 2500);
+    const timer = setTimeout(checkForUpdate, 4000);
     return () => clearTimeout(timer);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (
-    <UpdateContext.Provider value={{ checkForUpdate, isDownloading, updateReady }}>
+    <UpdateContext.Provider value={{ checkForUpdate, isDownloading, updateReady, statusMessage }}>
       {children}
 
       {/* ── Update banner ── */}
@@ -148,9 +158,9 @@ export default function UpdateChecker({ children }: { children: React.ReactNode 
           ]}
         >
           <MaterialCommunityIcons
-            name={updateReady ? "rocket-launch" : isDownloading ? "cloud-download" : "information"}
+            name={updateReady ? "rocket-launch" : isDownloading ? "cloud-download" : "check-circle"}
             size={18}
-            color={updateReady ? colors.white : colors.primary}
+            color={updateReady ? colors.white : colors.success}
           />
           <AppText
             variant="caption"
@@ -163,7 +173,7 @@ export default function UpdateChecker({ children }: { children: React.ReactNode 
           </AppText>
           {updateReady ? (
             <Pressable style={styles.bannerAction} onPress={applyUpdate}>
-              <AppText variant="caption" style={styles.bannerActionText}>
+              <AppText variant="caption" style={[styles.bannerActionText, { color: colors.white }]}>
                 Restart
               </AppText>
             </Pressable>
@@ -218,7 +228,6 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.25)",
   },
   bannerActionText: {
-    color: "#FFFFFF",
     fontWeight: "700",
     fontSize: 12,
   },
