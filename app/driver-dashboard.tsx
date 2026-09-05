@@ -148,7 +148,7 @@ export default function DriverDashboardScreen() {
   const ds = useMemo(() => ({
     title: { color: colors.text },
     driverName: { color: colors.text },
-    statusTitle: { color: colors.secondary },
+    statusTitle: { color: "#FFFFFF" },
     tileLabel: { color: colors.text },
     sectionTitle: { color: colors.text },
     routeTitle: { color: colors.text },
@@ -674,7 +674,7 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     padding: SPACING.md,
     borderRadius: 20,
-    backgroundColor: COLORS.navy,
+    backgroundColor: "#102A43",
     marginBottom: SPACING.xl,
   },
   statusPanelOnline: {
@@ -686,7 +686,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: SPACING.sm,
   },
-  statusTitle: { color: COLORS.secondary, fontSize: 18, lineHeight: 24 },
+  statusTitle: { color: "#FFFFFF", fontSize: 18, lineHeight: 24 },
   statusText: {
     color: "rgba(255,255,255,0.72)",
     marginTop: 3,

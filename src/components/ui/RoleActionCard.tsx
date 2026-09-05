@@ -61,7 +61,7 @@ export default function RoleActionCard({
         ]}
       >
         <View style={[styles.iconWrap, tone === "blue" ? styles.blueIcon : styles.navyIcon]}>
-          <MaterialCommunityIcons name={icon} size={25} color={COLORS.secondary} />
+          <MaterialCommunityIcons name={icon} size={25} color="#FFFFFF" />
         </View>
         <View style={styles.copy}>
           <AppText variant="heading" style={styles.title}>
@@ -72,7 +72,7 @@ export default function RoleActionCard({
           </AppText>
         </View>
         <View style={styles.arrowCircle}>
-          <MaterialCommunityIcons name="arrow-top-right" size={18} color={COLORS.navy} />
+          <MaterialCommunityIcons name="arrow-top-right" size={18} color="#102A43" />
         </View>
       </Animated.View>
     </Pressable>
@@ -93,13 +93,13 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     padding: SPACING.md,
-    shadowColor: COLORS.navy,
+    shadowColor: "#102A43",
     shadowOpacity: 0.16,
     shadowRadius: 14,
     elevation: 5,
   },
   navyCard: {
-    backgroundColor: COLORS.navy,
+    backgroundColor: "#102A43",
   },
   blueCard: {
     backgroundColor: COLORS.primary,
@@ -124,7 +124,7 @@ const styles = StyleSheet.create({
     paddingRight: SPACING.sm,
   },
   title: {
-    color: COLORS.secondary,
+    color: "#FFFFFF",
     fontSize: 17,
     lineHeight: 22,
     fontWeight: "700",
@@ -141,6 +141,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: COLORS.secondary,
+    backgroundColor: "#FFFFFF",
   },
 });

@@ -32,6 +32,7 @@ export default function RoutesScreen() {
     searchInput: { color: colors.text },
     searchBar: { backgroundColor: colors.veryLightBlue, borderColor: colors.blueWash },
     headerIcon: { backgroundColor: colors.blueWash },
+    eyebrow: { color: colors.primary },
   }), [colors]);
   const [routes, setRoutes] = useState<Route[]>([]);
   const [loading, setLoading] = useState(true);
@@ -104,7 +105,7 @@ export default function RoutesScreen() {
       >
         <View style={styles.headerRow}>
           <View>
-            <AppText variant="caption" style={styles.eyebrow}>PLAN YOUR JOURNEY</AppText>
+            <AppText variant="caption" style={[styles.eyebrow, ds.eyebrow]}>PLAN YOUR JOURNEY</AppText>
             <AppText variant="title" style={[styles.title, ds.title]}>Find a route</AppText>
             <AppText variant="body" style={[styles.subtitle, ds.subtitle]}>Choose where you are going today.</AppText>
           </View>
@@ -178,7 +179,7 @@ export default function RoutesScreen() {
                     onPress={() => toggleRoute(route.id)}
                   >
                     <View style={styles.routeIcon}>
-                      <MaterialCommunityIcons name="transit-connection-variant" size={24} color={COLORS.secondary} />
+                      <MaterialCommunityIcons name="transit-connection-variant" size={24} color="#FFFFFF" />
                     </View>
                     <View style={styles.routeCopy}>
                       <AppText variant="heading" style={styles.routeTitle}>
@@ -188,17 +189,22 @@ export default function RoutesScreen() {
                         <AppText variant="caption" style={styles.stopsHint}>
                           {route.stops.length} {route.stops.length === 1 ? "stop" : "stops"}
                         </AppText>
-                        {seatData[route.id] && (
-                          <AppText variant="caption" style={styles.seatsHint}>
-                            {seatData[route.id].totalSeats}/{seatData[route.id].totalCapacity} seats · {seatData[route.id].tripCount} {seatData[route.id].tripCount === 1 ? "driver" : "drivers"}
-                          </AppText>
-                        )}
+                        {seatData[route.id] &&
+                          (seatData[route.id].tripCount > 0 ? (
+                            <AppText variant="caption" style={styles.seatsHint}>
+                              {seatData[route.id].totalSeats}/{seatData[route.id].totalCapacity} seats · {seatData[route.id].tripCount} {seatData[route.id].tripCount === 1 ? "driver" : "drivers"}
+                            </AppText>
+                          ) : (
+                            <AppText variant="caption" style={styles.noDriversHint}>
+                              No active drivers yet
+                            </AppText>
+                          ))}
                       </View>
                     </View>
                     <MaterialCommunityIcons
                       name={isExpanded ? "chevron-up" : "chevron-down"}
                       size={20}
-                      color="rgba(255,255,255,0.5)"
+                      color="rgba(255,255,255,0.85)"
                     />
                   </Pressable>
 
@@ -261,7 +267,7 @@ export default function RoutesScreen() {
 const styles = StyleSheet.create({
   content: {
     paddingHorizontal: SPACING.lg,
-    paddingTop: SPACING.xl,
+    paddingTop: 60,
     paddingBottom: SPACING.xxl,
   },
   headerRow: {
@@ -315,11 +321,17 @@ const styles = StyleSheet.create({
   routeList: {
     gap: SPACING.md,
   },
+  // Hero card — intentionally a fixed dark-navy surface in BOTH themes.
+  // Do NOT use COLORS.navy / COLORS.secondary here: those tokens are
+  // redefined in the dark palette (navy -> light, secondary -> dark), so
+  // the card inverts to a white slab when dark mode is active.
   routeCard: {
     borderRadius: 20,
-    backgroundColor: COLORS.navy,
+    backgroundColor: "#102A43",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.10)",
     overflow: "hidden",
-    shadowColor: COLORS.navy,
+    shadowColor: "#102A43",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.16,
     shadowRadius: 14,
@@ -349,7 +361,7 @@ const styles = StyleSheet.create({
     marginRight: SPACING.sm,
   },
   routeTitle: {
-    color: COLORS.secondary,
+    color: "#FFFFFF",
     fontSize: 16,
     lineHeight: 22,
   },
@@ -363,8 +375,12 @@ const styles = StyleSheet.create({
   stopsHint: {
     color: "rgba(255,255,255,0.55)",
   },
+  noDriversHint: {
+    color: "rgba(255,255,255,0.55)",
+    fontStyle: "italic",
+  },
   seatsHint: {
-    color: COLORS.accent,
+    color: "#F2A93B",
     fontWeight: "600",
   },
 
@@ -407,7 +423,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(255,255,255,0.35)",
   },
   stopDotEndpoint: {
-    backgroundColor: COLORS.secondary,
+    backgroundColor: "#FFFFFF",
     width: 10,
     height: 10,
     borderRadius: 5,
@@ -427,13 +443,14 @@ const styles = StyleSheet.create({
     marginLeft: SPACING.sm,
   },
   stopNameEndpoint: {
-    color: COLORS.secondary,
+    color: "#FFFFFF",
     fontWeight: "600",
   },
 
   viewMapButton: {
-    borderColor: COLORS.secondary,
-    backgroundColor: "rgba(255,255,255,0.15)",
+    borderColor: "rgba(255,255,255,0.85)",
+    borderWidth: 2,
+    backgroundColor: "rgba(255,255,255,0.16)",
   },
 
   /* ── States ── */
