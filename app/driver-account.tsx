@@ -122,7 +122,7 @@ export default function DriverAccountScreen() {
     tripCard: { backgroundColor: colors.glass, borderColor: colors.glassBorder },
     emptyState: { backgroundColor: colors.glass, borderColor: colors.glassBorder },
     backBtn: { backgroundColor: colors.blueWash },
-    avatarLarge: { backgroundColor: colors.blueWash },
+    avatarLarge: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.glassBorder },
   }), [colors]);
   const [trips, setTrips] = useState<Trip[]>([]);
   const [driverProfile, setDriverProfile] = useState<any>(null);
@@ -207,7 +207,7 @@ export default function DriverAccountScreen() {
             <MaterialCommunityIcons
               name="arrow-left"
               size={22}
-              color={COLORS.primary}
+              color={colors.primary}
             />
           </Pressable>
 
@@ -232,7 +232,7 @@ export default function DriverAccountScreen() {
               <MaterialCommunityIcons
                 name="steering"
                 size={40}
-                color={COLORS.primary}
+                color={colors.primary}
               />
             </View>
             <AppText variant="heading" style={[styles.profileName, ds.profileName]}>

@@ -38,8 +38,8 @@ export default function ProfileScreen() {
     fieldValue: { color: colors.textSecondary },
     photoHint: { color: colors.textSecondary },
     backBtn: { backgroundColor: colors.blueWash },
-    avatarLarge: { backgroundColor: colors.blueWash },
-    photoPlaceholder: { backgroundColor: colors.blueWash },
+    avatarLarge: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.glassBorder },
+    photoPlaceholder: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.glassBorder },
     fieldCard: { backgroundColor: colors.glass, borderColor: colors.glassBorder },
     divider: { backgroundColor: colors.veryLightBlue },
   }), [colors]);
@@ -137,7 +137,7 @@ export default function ProfileScreen() {
       >
         {/* Back */}
         <Pressable style={[styles.backBtn, ds.backBtn]} onPress={() => router.back()}>
-          <MaterialCommunityIcons name="arrow-left" size={22} color={COLORS.primary} />
+          <MaterialCommunityIcons name="arrow-left" size={22} color={colors.primary} />
         </Pressable>
         <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
           <View>
@@ -155,7 +155,7 @@ export default function ProfileScreen() {
                 <Image source={{ uri: photoURL }} style={styles.photo} resizeMode="cover" />
               ) : (
                 <View style={[styles.photoPlaceholder, ds.photoPlaceholder]}>
-                  <MaterialCommunityIcons name="account" size={48} color={COLORS.primary} />
+                  <MaterialCommunityIcons name="account" size={48} color={colors.primary} />
                 </View>
               )}
               <View style={styles.photoEditBadge}>
@@ -182,11 +182,11 @@ export default function ProfileScreen() {
             <AppText variant="heading" style={[styles.fieldLabel, ds.fieldLabel]}>Name</AppText>
             {!editingName ? (
               <Pressable onPress={() => setEditingName(true)}>
-                <MaterialCommunityIcons name="pencil" size={18} color={COLORS.primary} />
+                <MaterialCommunityIcons name="pencil" size={18} color={colors.primary} />
               </Pressable>
             ) : (
               <Pressable onPress={() => { setEditingName(false); setName(profile?.name || ""); }}>
-                <MaterialCommunityIcons name="close" size={18} color={COLORS.textSecondary} />
+                <MaterialCommunityIcons name="close" size={18} color={colors.textSecondary} />
               </Pressable>
             )}
           </View>
@@ -281,6 +281,14 @@ const styles = StyleSheet.create({
   photoSection: {
     alignItems: "center",
     marginBottom: SPACING.xl,
+  },
+  photoInnerBorder: {
+    position: "absolute",
+    width: 108,
+    height: 108,
+    borderRadius: 54,
+    borderWidth: 2,
+    borderColor: COLORS.primary + "40",
   },
   photoContainer: {
     position: "relative",

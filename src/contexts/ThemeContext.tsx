@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { Appearance, Platform } from "react-native";
+import { Appearance } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 import { COLORS, COLORS_DARK, type ColorPalette } from "../theme/colors";
@@ -102,13 +102,13 @@ export default function ThemeProvider({ children }: { children: React.ReactNode 
     }
   }, [themeMode, systemIsDark]);
 
-  // Mutate COLORS in-place so every import sees the current palette
+  // Mutate COLORS in-place so every import sees the current palette.
+  // NOTE: We intentionally do NOT call Appearance.setColorScheme() on Android.
+  // That API triggers a full activity recreation, which unmounts the React tree,
+  // losing all component state (including profile photos, form inputs, etc.).
+  // Instead, we just mutate COLORS and rely on the JS context for theme changes.
   useEffect(() => {
     syncColors(isDark);
-    // Also set the native Appearance for Android system UI
-    if (Platform.OS === "android") {
-      Appearance.setColorScheme(isDark ? "dark" : "light");
-    }
   }, [isDark]);
 
   const value = useMemo(

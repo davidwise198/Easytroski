@@ -135,7 +135,7 @@ export default function PassengerDashboardScreen() {
     stepText: { color: colors.textSecondary },
     tile: { backgroundColor: colors.glass, borderColor: colors.glassBorder },
     stepsCard: { backgroundColor: colors.glass, borderColor: colors.glassBorder },
-    avatar: { backgroundColor: colors.blueWash },
+    avatar: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.glassBorder },
   }), [colors]);
   const [refreshing, setRefreshing] = useState(false);
   const [profile, setProfile] = useState<Record<string, any> | null>(null);
@@ -233,7 +233,7 @@ export default function PassengerDashboardScreen() {
                         <MaterialCommunityIcons
                           name="account"
                           size={28}
-                          color={COLORS.primary}
+                          color={colors.primary}
                         />
                       </View>
                     )}

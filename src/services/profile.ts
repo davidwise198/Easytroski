@@ -53,14 +53,46 @@ export async function pickAndUploadPhoto(userId: string): Promise<string | null>
   const asset = result.assets[0];
 
   // Upload to Firebase Storage
-  const response = await fetch(asset.uri);
-  const blob = await response.blob();
+  let blob: Blob;
+  try {
+    const response = await fetch(asset.uri);
+    blob = await response.blob();
+  } catch (fetchErr: any) {
+    throw new Error("Failed to read image file. Please try again.");
+  }
+
+  // Validate blob size (Firebase Storage free tier limit: 5 MB)
+  if (blob.size > 5 * 1024 * 1024) {
+    throw new Error("Image is too large. Please choose a smaller photo (under 5 MB).");
+  }
 
   const storageRef = ref(storage, `profile-photos/${userId}.jpg`);
-  await uploadBytes(storageRef, blob, { contentType: "image/jpeg" });
+  try {
+    await uploadBytes(storageRef, blob, { contentType: "image/jpeg" });
+  } catch (uploadErr: any) {
+    const code = uploadErr?.code || "";
+    if (code.includes("storage/unauthorized") || code.includes("permission-denied")) {
+      throw new Error("Permission denied. Please check that Firebase Storage rules allow profile photo uploads.");
+    }
+    if (code.includes("storage/quota-exceeded")) {
+      throw new Error("Storage quota exceeded. Please contact support.");
+    }
+    if (code.includes("storage/canceled")) {
+      throw new Error("Upload was cancelled. Please try again.");
+    }
+    if (code.includes("storage/invalid") || code.includes("storage/bucket-not-found")) {
+      throw new Error("Storage is not configured correctly. Please contact support.");
+    }
+    throw new Error(uploadErr?.message || "Upload failed. Check your internet connection and try again.");
+  }
 
   // Get download URL
-  const downloadURL = await getDownloadURL(storageRef);
+  let downloadURL: string;
+  try {
+    downloadURL = await getDownloadURL(storageRef);
+  } catch {
+    throw new Error("Upload succeeded but could not get the image URL. Please try again.");
+  }
 
   // Update Firestore user document
   await setDoc(
@@ -116,13 +148,36 @@ export async function takeAndUploadPhoto(userId: string): Promise<string | null>
 
   const asset = result.assets[0];
 
-  const response = await fetch(asset.uri);
-  const blob = await response.blob();
+  // Read image as blob with error handling
+  let blob: Blob;
+  try {
+    const response = await fetch(asset.uri);
+    blob = await response.blob();
+  } catch {
+    throw new Error("Failed to read camera image. Please try again.");
+  }
+
+  if (blob.size > 5 * 1024 * 1024) {
+    throw new Error("Image is too large. Please try again with lower quality.");
+  }
 
   const storageRef = ref(storage, `profile-photos/${userId}.jpg`);
-  await uploadBytes(storageRef, blob, { contentType: "image/jpeg" });
+  try {
+    await uploadBytes(storageRef, blob, { contentType: "image/jpeg" });
+  } catch (uploadErr: any) {
+    const code = uploadErr?.code || "";
+    if (code.includes("storage/unauthorized") || code.includes("permission-denied")) {
+      throw new Error("Permission denied. Please check that Firebase Storage rules allow profile photo uploads.");
+    }
+    throw new Error(uploadErr?.message || "Upload failed. Check your internet connection and try again.");
+  }
 
-  const downloadURL = await getDownloadURL(storageRef);
+  let downloadURL: string;
+  try {
+    downloadURL = await getDownloadURL(storageRef);
+  } catch {
+    throw new Error("Upload succeeded but could not get the image URL. Please try again.");
+  }
 
   await setDoc(
     doc(db, "users", userId),

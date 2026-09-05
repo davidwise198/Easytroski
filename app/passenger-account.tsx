@@ -111,7 +111,7 @@ export default function PassengerAccountScreen() {
     bookingCard: { backgroundColor: colors.glass, borderColor: colors.glassBorder },
     emptyState: { backgroundColor: colors.glass, borderColor: colors.glassBorder },
     backBtn: { backgroundColor: colors.blueWash },
-    avatarLarge: { backgroundColor: colors.blueWash },
+    avatarLarge: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.glassBorder },
   }), [colors]);
   const [bookings, setBookings] = useState<Booking[]>([]);
   const [loading, setLoading] = useState(true);
@@ -187,7 +187,7 @@ export default function PassengerAccountScreen() {
             <MaterialCommunityIcons
               name="arrow-left"
               size={22}
-              color={COLORS.primary}
+              color={colors.primary}
             />
           </Pressable>
 
@@ -212,7 +212,7 @@ export default function PassengerAccountScreen() {
               <MaterialCommunityIcons
                 name="account"
                 size={40}
-                color={COLORS.primary}
+                color={colors.primary}
               />
             </View>
             <AppText variant="heading" style={[styles.profileName, ds.profileName]}>

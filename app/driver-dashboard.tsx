@@ -166,6 +166,7 @@ export default function DriverDashboardScreen() {
     seatCounterCard: { backgroundColor: colors.blueWash, borderColor: colors.veryLightBlue },
     routeRow: { backgroundColor: colors.veryLightBlue + 'BC' },
     selectedRoute: { borderColor: colors.primary, backgroundColor: colors.blueWash },
+    driverIcon: { backgroundColor: colors.surface, borderColor: colors.glassBorder },
   }), [colors]);
   const [routes, setRoutes] = useState<Route[]>([]);
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
@@ -368,14 +369,14 @@ export default function DriverDashboardScreen() {
                   onPress={() => router.push("/profile")}
                   style={({ pressed }) => [pressed && { opacity: 0.7 }]}
                 >
-                  <View style={styles.driverIcon}>
+                  <View style={[styles.driverIcon, ds.driverIcon]}>
                     {photoURL ? (
                       <Image source={{ uri: photoURL }} style={styles.driverPhoto} resizeMode="cover" />
                     ) : (
                       <MaterialCommunityIcons
                         name="account"
                         size={25}
-                        color={COLORS.primary}
+                        color={colors.primary}
                       />
                     )}
                   </View>

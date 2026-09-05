@@ -119,16 +119,10 @@ export default function UpdateChecker({ children }: { children: React.ReactNode 
       }
     } catch (error) {
       setIsDownloading(false);
-      // Silently handle — don't show alarming error banner on every launch
-      // The update check failing is expected in many scenarios (no network, dev builds, etc.)
-      setStatusMessage("Update check unavailable");
-      if (__DEV__) {
-        // Don't show banner at all in dev mode
-        return;
-      }
-      // Only show a subtle notice in production, and auto-dismiss quickly
-      showBanner("Update check skipped — will retry next time.");
-      setTimeout(hideBanner, 2000);
+      // Completely silent — update check failures are expected in many scenarios:
+      // no network, dev builds, Expo Go, first launch before update server is ready, etc.
+      // Never show an error banner to the user for this.
+      setStatusMessage("");
     }
   }, [showBanner, hideBanner]);
 
