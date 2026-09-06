@@ -30,7 +30,7 @@ import { COLORS, SPACING } from "../src/theme";
 import { showToast } from "../src/utils/toast";
 
 export default function ProfileScreen() {
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const { colors } = useThemeColors();
   const ds = useMemo(() => ({
     title: { color: colors.text },
@@ -101,6 +101,20 @@ export default function ProfileScreen() {
         },
       },
       { text: "Cancel", style: "cancel" },
+    ]);
+  };
+
+  const handleSignOut = async () => {
+    Alert.alert("Sign out", "Are you sure you want to sign out?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Sign out",
+        style: "destructive",
+        onPress: async () => {
+          await signOut();
+          router.replace("/auth/login");
+        },
+      },
     ]);
   };
 
@@ -253,6 +267,20 @@ export default function ProfileScreen() {
             {isGoogleUser ? "Google" : "Email & password"}
           </AppText>
         </View>
+
+        {/* Sign out — always the last item */}
+        <Pressable
+          style={({ pressed }) => [
+            styles.signOutRow,
+            pressed && styles.signOutPressed,
+          ]}
+          onPress={() => void handleSignOut()}
+        >
+          <MaterialCommunityIcons name="logout" size={20} color={COLORS.danger} />
+          <AppText variant="body" style={styles.signOutText}>
+            Sign out
+          </AppText>
+        </Pressable>
       </ScrollView>
     </AppBackground>
   );
@@ -374,5 +402,26 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontWeight: "700",
     textTransform: "capitalize",
+  },
+
+  /* Sign out */
+  signOutRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: SPACING.sm,
+    paddingVertical: SPACING.md,
+    marginTop: SPACING.lg,
+    borderRadius: 16,
+    backgroundColor: "rgba(239,68,68,0.08)",
+    borderWidth: 1,
+    borderColor: "rgba(239,68,68,0.25)",
+  },
+  signOutPressed: {
+    opacity: 0.5,
+  },
+  signOutText: {
+    color: COLORS.danger,
+    fontWeight: "600",
   },
 });

@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   Pressable,
   RefreshControl,
@@ -20,8 +21,11 @@ import { useAuth } from "../src/contexts/AuthContext";
 import { useThemeColors } from "../src/contexts/ThemeContext";
 import { useMemo } from "react";
 import { getPassengerBookings } from "../src/services/transport";
+import { deleteDoc, doc } from "firebase/firestore";
+import { db } from "../src/services/firebase";
 import { COLORS, SPACING } from "../src/theme";
 import { Booking, BookingStatus } from "../src/types/models";
+import { showToast } from "../src/utils/toast";
 
 // ── Helpers ──
 
@@ -148,6 +152,30 @@ export default function PassengerAccountScreen() {
     setRefreshing(true);
     await loadData();
     setRefreshing(false);
+  };
+
+  const handleDeleteBooking = async (booking: Booking) => {
+    Alert.alert(
+      "Delete booking",
+      "This will permanently remove this past booking from your history.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteDoc(doc(db, "bookings", booking.id));
+              setBookings((prev) => prev.filter((b) => b.id !== booking.id));
+              showToast("success", "Booking deleted", "Removed from your history.");
+            } catch (error) {
+              console.error("Failed to delete booking:", error);
+              showToast("error", "Delete failed", "Could not delete booking.");
+            }
+          },
+        },
+      ]
+    );
   };
 
   const handleSignOut = async () => {
@@ -364,6 +392,19 @@ export default function PassengerAccountScreen() {
                       >
                         {booking.seats || 1} seat{(booking.seats || 1) > 1 ? "s" : ""}
                       </AppText>
+                      {(booking.status === "completed" || booking.status === "cancelled") && (
+                        <Pressable
+                          onPress={() => void handleDeleteBooking(booking)}
+                          style={styles.deleteBtn}
+                          hitSlop={8}
+                        >
+                          <MaterialCommunityIcons
+                            name="trash-can-outline"
+                            size={16}
+                            color={COLORS.danger}
+                          />
+                        </Pressable>
+                      )}
                     </View>
                   </View>
                 ))}
@@ -559,6 +600,10 @@ const styles = StyleSheet.create({
   bookingSeats: {
     color: COLORS.textSecondary,
     fontSize: 11,
+  },
+  deleteBtn: {
+    marginTop: 6,
+    padding: 2,
   },
 
   // Sign out

@@ -31,6 +31,8 @@ import StatCard from "../src/components/ui/StatCard";
 import { db } from "../src/services/firebase";
 import { COLORS, SPACING } from "../src/theme";
 import { useThemeColors } from "../src/contexts/ThemeContext";
+import { useAuth } from "../src/contexts/AuthContext";
+import AuthGate from "../src/components/AuthGate";
 import { useMemo } from "react";
 import { showToast } from "../src/utils/toast";
 import { Route } from "../src/types/models";
@@ -76,6 +78,7 @@ function EditModal({
 
 export default function AdminDashboardScreen() {
   const { colors } = useThemeColors();
+  const { signOut } = useAuth();
   const ds = useMemo(() => ({
     title: { color: colors.text },
     listTitle: { color: colors.text },
@@ -354,6 +357,90 @@ export default function AdminDashboardScreen() {
     ]);
   };
 
+  // ── Admin session ──
+
+  const handleSignOut = async () => {
+    Alert.alert("Sign out", "Are you sure you want to sign out of the admin dashboard?", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Sign out",
+        style: "destructive",
+        onPress: async () => {
+          await signOut();
+          router.replace("/auth/login");
+        },
+      },
+    ]);
+  };
+
+  // ── Route CRUD ──
+
+  const handleSaveRoute = async (
+    routeId: string,
+    fields: { origin: string; destination: string; stops: string[] }
+  ) => {
+    setEditSaving(true);
+    try {
+      await updateDoc(doc(db, "routes", routeId), {
+        ...fields,
+        updatedAt: serverTimestamp(),
+      });
+      showToast("success", "Route updated", "Changes saved.");
+      setEditItem(null);
+      void loadAllData();
+    } catch (error) {
+      showToast("error", "Update failed", "Could not save changes.");
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  // ── Booking CRUD ──
+
+  const handleDeleteBooking = async (bookingId: string) => {
+    Alert.alert("Delete booking", "This will permanently remove this booking.", [
+      { text: "Cancel", style: "cancel" },
+      {
+        text: "Delete",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await deleteDoc(doc(db, "bookings", bookingId));
+            showToast("info", "Booking deleted", "Booking removed.");
+            void loadAllData();
+          } catch (error) {
+            showToast("error", "Delete failed", "Could not delete booking.");
+          }
+        },
+      },
+    ]);
+  };
+
+  // ── User CRUD ──
+
+  const handleDeleteUser = async (userId: string, name: string) => {
+    Alert.alert(
+      "Delete user",
+      `Remove ${name || "this user"}? The Firebase Auth account still exists, so they could sign in again.`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteDoc(doc(db, "users", userId));
+              showToast("info", "User deleted", "User profile removed.");
+              void loadAllData();
+            } catch (error) {
+              showToast("error", "Delete failed", "Could not delete user.");
+            }
+          },
+        },
+      ]
+    );
+  };
+
   const tabs: { key: Tab; label: string; icon: string }[] = [
     { key: "stats", label: "Overview", icon: "chart-bar" },
     { key: "drivers", label: "Drivers", icon: "steering" },
@@ -375,6 +462,7 @@ export default function AdminDashboardScreen() {
   };
 
   return (
+    <AuthGate allowedRoles={["admin"]}>
     <AppBackground>
       <ScrollView
         contentContainerStyle={styles.content}
@@ -388,9 +476,17 @@ export default function AdminDashboardScreen() {
         showsVerticalScrollIndicator={false}
       >
         {/* Header */}
-        <Pressable style={styles.backBtn} onPress={() => router.back()}>
-          <MaterialCommunityIcons name="arrow-left" size={22} color={COLORS.primary} />
-        </Pressable>
+        <View style={styles.headerRow}>
+          <Pressable style={styles.backBtn} onPress={() => router.back()}>
+            <MaterialCommunityIcons name="arrow-left" size={22} color={COLORS.primary} />
+          </Pressable>
+          <Pressable
+            style={[styles.logoutBtn, ds.backBtn]}
+            onPress={() => void handleSignOut()}
+          >
+            <MaterialCommunityIcons name="logout" size={18} color={COLORS.danger} />
+          </Pressable>
+        </View>
         <AppText variant="caption" style={styles.eyebrow}>ADMIN DASHBOARD</AppText>
         <AppText variant="title" style={[styles.title, ds.title]}>EasyTroski Admin</AppText>
 
@@ -523,6 +619,12 @@ export default function AdminDashboardScreen() {
                         >
                           <MaterialCommunityIcons name="pencil" size={14} color={COLORS.white} />
                         </Pressable>
+                        <Pressable
+                          style={[styles.actionBtn, { backgroundColor: COLORS.danger }]}
+                          onPress={() => void handleDeleteUser(user.id, user.name || user.email || "")}
+                        >
+                          <MaterialCommunityIcons name="trash-can-outline" size={14} color={COLORS.white} />
+                        </Pressable>
                       </View>
                     </View>
                   ))
@@ -602,6 +704,12 @@ export default function AdminDashboardScreen() {
                           onPress={() => { setEditItem(booking); setEditType("booking"); setEditField(booking.status || "pending"); }}
                         >
                           <MaterialCommunityIcons name="pencil" size={14} color={COLORS.white} />
+                        </Pressable>
+                        <Pressable
+                          style={[styles.actionBtn, { backgroundColor: COLORS.danger }]}
+                          onPress={() => void handleDeleteBooking(booking.id)}
+                        >
+                          <MaterialCommunityIcons name="trash-can-outline" size={14} color={COLORS.white} />
                         </Pressable>
                       </View>
                     </View>
@@ -689,6 +797,12 @@ export default function AdminDashboardScreen() {
                         <AppText variant="caption" style={[styles.listSubtitle, ds.listSubtitle]}>{route.stops?.length || 0} stops · {route.active ? "Active" : "Inactive"}</AppText>
                       </View>
                       <View style={styles.rowActions}>
+                        <Pressable
+                          style={[styles.actionBtn, { backgroundColor: COLORS.primary }]}
+                          onPress={() => { setEditItem(route); setEditType("route"); }}
+                        >
+                          <MaterialCommunityIcons name="pencil" size={14} color={COLORS.white} />
+                        </Pressable>
                         <Pressable style={[styles.actionBtn, { backgroundColor: COLORS.success }]} onPress={() => void handleToggleActive(route)}>
                           <MaterialCommunityIcons name={route.active ? "eye-off" : "eye"} size={14} color={COLORS.white} />
                         </Pressable>
@@ -814,7 +928,55 @@ export default function AdminDashboardScreen() {
           />
         </EditModal>
       )}
+
+      {editType === "route" && editItem && (
+        <EditModal visible title="Edit Route" onClose={() => setEditItem(null)}>
+          <RouteEditForm
+            route={editItem}
+            onSave={async (fields) => void handleSaveRoute(editItem.id, fields)}
+            saving={editSaving}
+          />
+        </EditModal>
+      )}
     </AppBackground>
+    </AuthGate>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Route edit sub-form
+// ---------------------------------------------------------------------------
+
+function RouteEditForm({
+  route,
+  onSave,
+  saving,
+}: {
+  route: any;
+  onSave: (fields: { origin: string; destination: string; stops: string[] }) => void;
+  saving: boolean;
+}) {
+  const [origin, setOrigin] = useState(route.origin || "");
+  const [destination, setDestination] = useState(route.destination || "");
+  const [stopsText, setStopsText] = useState<string>((route.stops || []).join(", "));
+
+  return (
+    <View style={{ gap: SPACING.sm }}>
+      <GlassInput placeholder="Origin (e.g. Omanjor)" icon="map-marker-account" value={origin} onChangeText={setOrigin} />
+      <GlassInput placeholder="Destination (e.g. Lapaz (Race Course))" icon="map-marker" value={destination} onChangeText={setDestination} />
+      <GlassInput placeholder="Stops (comma separated)" icon="map-marker-path" value={stopsText} onChangeText={setStopsText} />
+      <PrimaryButton
+        title={saving ? "Saving..." : "Save changes"}
+        onPress={() =>
+          onSave({
+            origin: origin.trim(),
+            destination: destination.trim(),
+            stops: stopsText.split(",").map((s) => s.trim()).filter(Boolean),
+          })
+        }
+        disabled={saving || !origin.trim() || !destination.trim()}
+      />
+    </View>
   );
 }
 
@@ -861,10 +1023,20 @@ const styles = StyleSheet.create({
     paddingTop: 56,
     paddingBottom: SPACING.xxl + 20,
   },
+  headerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: SPACING.md,
+  },
   backBtn: {
     width: 40, height: 40, borderRadius: 14,
     alignItems: "center", justifyContent: "center",
-    backgroundColor: COLORS.blueWash, marginBottom: SPACING.md,
+    backgroundColor: COLORS.blueWash,
+  },
+  logoutBtn: {
+    width: 40, height: 40, borderRadius: 14,
+    alignItems: "center", justifyContent: "center",
   },
   eyebrow: { color: COLORS.primary, fontSize: 10, fontWeight: "800", letterSpacing: 1.1, marginBottom: SPACING.xs },
   title: { color: COLORS.navy, fontSize: 28, lineHeight: 34, marginBottom: SPACING.lg },
