@@ -10,7 +10,7 @@ import { supabase, ensureSupabaseSession } from "./supabase";
 // The URL is still saved to Firestore so all display code stays unchanged.
 // ---------------------------------------------------------------------------
 
-const PROFILE_BUCKET = "profile-photos";
+const PROFILE_BUCKET = "Profile-picture";
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB
 
 /** The user's profile photo URL, or null if using default avatar. */
@@ -78,7 +78,7 @@ async function uploadProfilePhoto(userId: string, body: ArrayBuffer): Promise<st
     }
     if (/bucket|not found|does not exist/.test(message)) {
       throw new Error(
-        "Storage is not configured correctly. Please check the profile-photos bucket exists."
+        `Storage is not configured correctly. Please check the ${PROFILE_BUCKET} bucket exists.`
       );
     }
     if (/size|large|limit/.test(message)) {
