@@ -31,11 +31,30 @@ export async function getUserProfile(userId: string) {
 // ---------------------------------------------------------------------------
 
 /**
- * Upload a blob to Supabase Storage and return its public URL.
+ * Read a picked image (file:// URI) into an ArrayBuffer.
+ *
+ * supabase-js explicitly warns that Blob/File/FormData uploads don't work
+ * as intended on React Native — the raw-body ArrayBuffer path is the
+ * supported approach, so we read the file into bytes before uploading.
+ */
+async function readImageBytes(uri: string): Promise<ArrayBuffer> {
+  const response = await fetch(uri);
+  const blob = await response.blob();
+  return new Promise<ArrayBuffer>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as ArrayBuffer);
+    reader.onerror = () =>
+      reject(new Error("Failed to read image file. Please try again."));
+    reader.readAsArrayBuffer(blob);
+  });
+}
+
+/**
+ * Upload image bytes to Supabase Storage and return its public URL.
  * Throws friendly, actionable errors on failure.
  */
-async function uploadProfilePhoto(userId: string, blob: Blob): Promise<string> {
-  if (blob.size > MAX_IMAGE_BYTES) {
+async function uploadProfilePhoto(userId: string, body: ArrayBuffer): Promise<string> {
+  if (body.byteLength > MAX_IMAGE_BYTES) {
     throw new Error("Image is too large. Please choose a smaller photo (under 5 MB).");
   }
 
@@ -46,9 +65,11 @@ async function uploadProfilePhoto(userId: string, blob: Blob): Promise<string> {
 
   const { error } = await supabase.storage
     .from(PROFILE_BUCKET)
-    .upload(fileName, blob, { contentType: "image/jpeg", upsert: true });
+    .upload(fileName, body, { contentType: "image/jpeg", upsert: true });
 
   if (error) {
+    // Log the full error so fields like statusCode aren't hidden.
+    console.error("[Supabase] profile photo upload failed:", error);
     const message = `${error.message || ""} ${error.status || ""}`.toLowerCase();
     if (/permission|unauthorized|policy|row.?level|forbidden/.test(message)) {
       throw new Error(
@@ -63,7 +84,9 @@ async function uploadProfilePhoto(userId: string, blob: Blob): Promise<string> {
     if (/size|large|limit/.test(message)) {
       throw new Error("Image is too large. Please choose a smaller photo.");
     }
-    throw new Error("Upload failed. Check your internet connection and try again.");
+    throw new Error(
+      `Upload failed: ${error.message || "unknown error"} (${error.status || "no status"})`
+    );
   }
 
   const { data } = supabase.storage.from(PROFILE_BUCKET).getPublicUrl(fileName);
@@ -143,15 +166,14 @@ export async function pickAndUploadPhoto(userId: string): Promise<string | null>
 
   const asset = result.assets[0];
 
-  let blob: Blob;
+  let bytes: ArrayBuffer;
   try {
-    const response = await fetch(asset.uri);
-    blob = await response.blob();
+    bytes = await readImageBytes(asset.uri);
   } catch {
     throw new Error("Failed to read image file. Please try again.");
   }
 
-  const downloadURL = await uploadProfilePhoto(userId, blob);
+  const downloadURL = await uploadProfilePhoto(userId, bytes);
   await savePhotoURL(userId, downloadURL);
   return downloadURL;
 }
@@ -179,15 +201,14 @@ export async function takeAndUploadPhoto(userId: string): Promise<string | null>
 
   const asset = result.assets[0];
 
-  let blob: Blob;
+  let bytes: ArrayBuffer;
   try {
-    const response = await fetch(asset.uri);
-    blob = await response.blob();
+    bytes = await readImageBytes(asset.uri);
   } catch {
     throw new Error("Failed to read camera image. Please try again.");
   }
 
-  const downloadURL = await uploadProfilePhoto(userId, blob);
+  const downloadURL = await uploadProfilePhoto(userId, bytes);
   await savePhotoURL(userId, downloadURL);
   return downloadURL;
 }
