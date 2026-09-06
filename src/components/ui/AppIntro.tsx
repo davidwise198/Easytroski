@@ -4,6 +4,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { StatusBar } from "expo-status-bar";
 
 import AppBackground from "./AppBackground";
+import AppLogo from "./AppLogo";
 import AppText from "./AppText";
 import { useThemeColors } from "../../contexts/ThemeContext";
 import { COLORS, SPACING } from "../../theme";
@@ -37,8 +38,12 @@ export default function AppIntro({ onComplete }: AppIntroProps) {
 
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
+  const dismissTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
+    // Safety net: never let the intro overlay hang if the animation stalls.
+    dismissTimerRef.current = setTimeout(() => onCompleteRef.current(), 6500);
+
     const sequence = Animated.sequence([
       Animated.parallel([
         // 1. Bus arrives from the right and stops at the pick-up point
@@ -99,11 +104,17 @@ export default function AppIntro({ onComplete }: AppIntroProps) {
     ]);
 
     sequence.start(() => {
-      setTimeout(() => onCompleteRef.current(), 650);
+      if (dismissTimerRef.current) {
+        clearTimeout(dismissTimerRef.current);
+      }
+      dismissTimerRef.current = setTimeout(() => onCompleteRef.current(), 650);
     });
 
     return () => {
       sequence.stop();
+      if (dismissTimerRef.current) {
+        clearTimeout(dismissTimerRef.current);
+      }
     };
   }, [busX, paxX, board, ring, contentOpacity, contentTranslateY]);
 
@@ -142,6 +153,9 @@ export default function AppIntro({ onComplete }: AppIntroProps) {
       <StatusBar style={isDark ? "light" : "dark"} />
       <AppBackground>
         <View style={styles.center}>
+          {/* ── Modern brand mark ── */}
+          <AppLogo size={62} style={styles.brandLogo} />
+
           {/* ── Meet-your-ride hero scene ── */}
           <View style={styles.scene}>
             <View style={[styles.road, ds.road]} />
@@ -212,6 +226,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     paddingHorizontal: SPACING.xl,
+  },
+  brandLogo: {
+    marginBottom: SPACING.lg,
   },
   scene: {
     width: 250,

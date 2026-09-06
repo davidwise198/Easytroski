@@ -22,7 +22,7 @@
       "package": "com.easytroski.app",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#1B2A4A"
+        "backgroundColor": "#0A3FA8"
       },
       "permissions": [
         "ACCESS_COARSE_LOCATION",

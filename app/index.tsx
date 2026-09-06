@@ -5,7 +5,7 @@ import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import AppBackground from "../src/components/ui/AppBackground";
-import AnimatedBrandMark from "../src/components/ui/AnimatedBrandMark";
+import AppLogo from "../src/components/ui/AppLogo";
 import AppText from "../src/components/ui/AppText";
 import FeatureChip from "../src/components/ui/FeatureChip";
 import RoleActionCard from "../src/components/ui/RoleActionCard";
@@ -81,7 +81,7 @@ export default function Index() {
       >
         <Animated.View style={{ opacity: entrance, transform: [{ translateY: contentTransform }] }}>
           <View style={styles.brandRow}>
-            <AnimatedBrandMark size={40} style={styles.logoMark} />
+            <AppLogo size={40} style={styles.logoMark} />
             <AppText variant="heading" style={[styles.brandName, ds.brandName]}>EasyTroski</AppText>
             <View style={styles.statusDot} />
           </View>
@@ -171,7 +171,7 @@ export default function Index() {
 const styles = StyleSheet.create({
   scrollContent: { paddingHorizontal: SPACING.lg, paddingBottom: SPACING.xxl },
   brandRow: { flexDirection: "row", alignItems: "center", marginBottom: SPACING.xl },
-  logoMark: { width: 40, height: 40, borderRadius: 14, alignItems: "center", justifyContent: "center", backgroundColor: COLORS.primary, marginRight: SPACING.sm },
+  logoMark: { marginRight: SPACING.sm },
   brandName: { color: COLORS.navy, fontSize: 20, lineHeight: 26 },
   statusDot: { width: 7, height: 7, borderRadius: 4, backgroundColor: COLORS.accent, marginLeft: 6 },
   hero: { minHeight: 270, flexDirection: "row", marginBottom: SPACING.lg },

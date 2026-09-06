@@ -67,16 +67,18 @@ function tripStatusColor(status: TripStatus): string {
 
 export default function DriverMapScreen() {
   const { user, signOut } = useAuth();
-  const { colors } = useThemeColors();
+  const { colors, isDark } = useThemeColors();
   const ds = useMemo(() => ({
     topBarText: { color: colors.text },
+    topBarEyebrow: { color: colors.primary },
     panelTitle: { color: colors.text },
     pickupSheetName: { color: colors.text },
     seatCountText: { color: colors.text },
     bookingTitle: { color: colors.text },
-    topBar: { backgroundColor: 'rgba(255,255,255,0.92)' },
+    topBar: { backgroundColor: isDark ? 'rgba(30,41,59,0.95)' : 'rgba(255,255,255,0.92)' },
     permissionBanner: { backgroundColor: colors.surface },
     chip: { backgroundColor: colors.surface, borderColor: colors.veryLightBlue },
+    chipText: { color: colors.text },
     bottomPanel: { backgroundColor: colors.surface },
     pickupSheet: { backgroundColor: colors.surface },
     iconButton: { backgroundColor: colors.blueWash },
@@ -85,12 +87,13 @@ export default function DriverMapScreen() {
     bookingCard: { backgroundColor: colors.veryLightBlue },
     bookingIcon: { backgroundColor: colors.white },
     trackingBadge: { backgroundColor: colors.veryLightBlue },
+    pickupLabel: { backgroundColor: colors.surface },
     permissionText: { color: colors.textSecondary },
     sectionLabel: { color: colors.textSecondary },
-    pickupLabelText: { color: colors.white },
+    pickupLabelText: { color: colors.text },
     panelSubtitle: { color: colors.textSecondary },
     trackingText: { color: colors.textSecondary },
-    tripStatusText: { color: colors.textSecondary },
+    tripStatusText: { color: colors.white },
     tripTime: { color: colors.textSecondary },
     bookingCardItem: { backgroundColor: colors.veryLightBlue },
     emptyBookings: { color: colors.textSecondary },
@@ -101,7 +104,7 @@ export default function DriverMapScreen() {
     bookingSubtitle: { color: colors.textSecondary },
     bookingStatusText: { color: colors.white },
     bookingSeatsInline: { color: colors.textSecondary },
-  }), [colors]);
+  }), [colors, isDark]);
   const {
     status: permissionStatus,
     location,
@@ -390,7 +393,7 @@ export default function DriverMapScreen() {
               <View style={styles.pickupMarker}>
                 <MaterialCommunityIcons name="account-circle" size={20} color={COLORS.white} />
               </View>
-              <View style={styles.pickupLabel}>
+              <View style={[styles.pickupLabel, ds.pickupLabel]}>
                 <AppText variant="caption" style={[styles.pickupLabelText, ds.pickupLabelText]} numberOfLines={1}>
                   {pickup.passengerName}
                 </AppText>
@@ -405,7 +408,7 @@ export default function DriverMapScreen() {
             <MaterialCommunityIcons name="arrow-left" size={22} color={COLORS.primary} />
           </Pressable>
           <View style={styles.topBarTitle}>
-            <AppText variant="caption" style={styles.topBarEyebrow}>DRIVER MAP</AppText>
+            <AppText variant="caption" style={[styles.topBarEyebrow, ds.topBarEyebrow]}>DRIVER MAP</AppText>
             <AppText variant="heading" style={[styles.topBarText, ds.topBarText]}>
               {hasActiveTrip
                 ? `${activeTrip.origin || "Origin"} → ${activeTrip.destination || "Dest"}`
@@ -441,6 +444,7 @@ export default function DriverMapScreen() {
                   key={route.id}
                   style={[
                     styles.chip,
+                    ds.chip,
                     selectedRouteId === route.id && styles.chipSelected,
                   ]}
                   onPress={() => setSelectedRouteId(route.id)}
@@ -449,6 +453,7 @@ export default function DriverMapScreen() {
                     variant="caption"
                     style={[
                       styles.chipText,
+                      ds.chipText,
                       selectedRouteId === route.id && styles.chipTextSelected,
                     ]}
                   >

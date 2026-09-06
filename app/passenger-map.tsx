@@ -69,16 +69,17 @@ function tripStatusColor(status: TripStatus): string {
 
 export default function PassengerMapScreen() {
   const { user, signOut } = useAuth();
-  const { colors } = useThemeColors();
+  const { colors, isDark } = useThemeColors();
   const ds = useMemo(() => ({
     topBarText: { color: colors.text },
+    topBarEyebrow: { color: colors.primary },
     chipText: { color: colors.text },
     bookingBannerText: { color: colors.text },
     sheetRoute: { color: colors.text },
     vehicleInfoValue: { color: colors.text },
     seatEditText: { color: colors.text },
     ratingTitle: { color: colors.text },
-    topBar: { backgroundColor: 'rgba(255,255,255,0.92)' },
+    topBar: { backgroundColor: isDark ? 'rgba(30,41,59,0.95)' : 'rgba(255,255,255,0.92)' },
     permissionBanner: { backgroundColor: colors.surface },
     chip: { backgroundColor: colors.surface, borderColor: colors.veryLightBlue },
     bookingBanner: { backgroundColor: colors.surface },
@@ -97,10 +98,11 @@ export default function PassengerMapScreen() {
     ratingSubtitle: { color: colors.textSecondary },
     ratingSkip: { color: colors.textSecondary },
     approachingText: { color: colors.success },
+    busStopBanner: { backgroundColor: colors.blueWash },
     busStopText: { color: colors.primary },
     sheetStatusText: { color: colors.white },
     chipTextSelected: { color: colors.white },
-  }), [colors]);
+  }), [colors, isDark]);
   const params = useLocalSearchParams<{ routeId?: string }>();
   const {
     status: permissionStatus,
@@ -410,7 +412,7 @@ export default function PassengerMapScreen() {
           </Pressable>
 
           <View style={styles.topBarTitle}>
-            <AppText variant="caption" style={styles.topBarEyebrow}>EASYTROLSKI MAP</AppText>
+            <AppText variant="caption" style={[styles.topBarEyebrow, ds.topBarEyebrow]}>EASYTROLSKI MAP</AppText>
             <AppText variant="heading" style={[styles.topBarText, ds.topBarText]}>Find a ride</AppText>
           </View>
 
@@ -446,12 +448,12 @@ export default function PassengerMapScreen() {
             contentContainerStyle={styles.routeChips}
           >
             <Pressable
-              style={[styles.chip, !selectedRouteId && styles.chipSelected]}
+              style={[styles.chip, ds.chip, !selectedRouteId && styles.chipSelected]}
               onPress={() => setSelectedRouteId(null)}
             >
               <AppText
                 variant="caption"
-                style={[styles.chipText, !selectedRouteId && styles.chipTextSelected]}
+                style={[styles.chipText, ds.chipText, !selectedRouteId && styles.chipTextSelected]}
               >
                 All routes
               </AppText>
@@ -462,6 +464,7 @@ export default function PassengerMapScreen() {
                 key={route.id}
                 style={[
                   styles.chip,
+                  ds.chip,
                   selectedRouteId === route.id && styles.chipSelected,
                 ]}
                 onPress={() =>
@@ -474,6 +477,7 @@ export default function PassengerMapScreen() {
                   variant="caption"
                   style={[
                     styles.chipText,
+                    ds.chipText,
                     selectedRouteId === route.id && styles.chipTextSelected,
                   ]}
                 >
@@ -495,7 +499,7 @@ export default function PassengerMapScreen() {
 
         {/* ---- Bus stop warning after booking ---- */}
         {lastBookingId && (lastBookingStatus === "pending" || lastBookingStatus === "confirmed") && !driverApproaching && (
-          <View style={[styles.busStopBanner, { top: driverApproaching ? 290 : 240 }]}>
+          <View style={[styles.busStopBanner, ds.busStopBanner, { top: driverApproaching ? 290 : 240 }]}>
             <MaterialCommunityIcons name="bus-stop" size={18} color={COLORS.primary} />              <AppText variant="caption" style={[styles.busStopText, ds.busStopText]}>
                   Please stand by the nearest bus stop for easy pickup.
                 </AppText>
@@ -507,6 +511,7 @@ export default function PassengerMapScreen() {
           <>
           <View style={[
             styles.bookingBanner,
+            ds.bookingBanner,
             { top: (driverApproaching ? 290 : 0) + ((lastBookingStatus === "pending" || lastBookingStatus === "confirmed") && !driverApproaching ? 50 : 0) + 240 },
             lastBookingStatus === "confirmed" && styles.bookingBannerSuccess,
             lastBookingStatus === "cancelled" && styles.bookingBannerError,
