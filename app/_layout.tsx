@@ -1,5 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
-import { AppState } from "react-native";
+import React, { useEffect, useState } from "react";
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 
@@ -18,31 +17,12 @@ SplashScreen.preventAutoHideAsync().catch(() => {
 function RootLayoutNav() {
   const { loading } = useAuth();
   const [showIntro, setShowIntro] = useState(true);
-  const appStateRef = useRef(AppState.currentState);
 
   useEffect(() => {
     if (!loading) {
       SplashScreen.hideAsync();
     }
   }, [loading]);
-
-  // Replay the intro whenever the app returns to the foreground. Without
-  // this, Android keeps the process alive and reopening the app from
-  // recents simply resumes it — so the intro would only ever play once
-  // on a true cold start.
-  useEffect(() => {
-    const subscription = AppState.addEventListener("change", (nextState) => {
-      const prevState = appStateRef.current;
-      appStateRef.current = nextState;
-      if (
-        nextState === "active" &&
-        (prevState === "background" || prevState === "inactive")
-      ) {
-        setShowIntro(true);
-      }
-    });
-    return () => subscription.remove();
-  }, []);
 
   return (
     <>

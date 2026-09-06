@@ -11,6 +11,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
 
 import { COLORS, SPACING } from "../../theme";
+import { useThemeColors } from "../../contexts/ThemeContext";
 
 interface GlassInputProps extends TextInputProps {
   label?: string;
@@ -28,11 +29,17 @@ export default function GlassInput({
   style,
   ...props
 }: GlassInputProps) {
+  const { colors } = useThemeColors();
   const [isPasswordVisible, setIsPasswordVisible] = useState(false);
 
   return (
     <View style={styles.container}>
-      <View style={styles.inputWrapper}>
+      <View
+        style={[
+          styles.inputWrapper,
+          { backgroundColor: colors.veryLightBlue, borderColor: colors.glassBorder },
+        ]}
+      >
         <BlurView intensity={40} style={StyleSheet.absoluteFill} />
 
         <View style={styles.inputContent}>
@@ -40,14 +47,14 @@ export default function GlassInput({
             <MaterialCommunityIcons
               name={icon}
               size={20}
-              color={COLORS.primary}
+              color={colors.primary}
               style={styles.icon}
             />
           )}
 
           <TextInput
-            style={[styles.input, style]}
-            placeholderTextColor={COLORS.textSecondary}
+            style={[styles.input, style, { color: colors.text }]}
+            placeholderTextColor={colors.textSecondary}
             secureTextEntry={
               showPasswordToggle ? !isPasswordVisible : secureTextEntry
             }
@@ -62,7 +69,7 @@ export default function GlassInput({
               <MaterialCommunityIcons
                 name={isPasswordVisible ? "eye" : "eye-off"}
                 size={20}
-                color={COLORS.primary}
+                color={colors.primary}
               />
             </Pressable>
           )}
