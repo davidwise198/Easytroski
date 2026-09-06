@@ -1,13 +1,17 @@
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
-import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 import * as ImagePicker from "expo-image-picker";
 import { updateProfile } from "firebase/auth";
 
-import { auth, db, storage } from "./firebase";
+import { auth, db } from "./firebase";
+import { supabase, ensureSupabaseSession } from "./supabase";
 
 // ---------------------------------------------------------------------------
-// Default avatar for email signups (no Google photo)
+// Profile photo storage — Supabase Storage (bucket: profile-photos).
+// The URL is still saved to Firestore so all display code stays unchanged.
 // ---------------------------------------------------------------------------
+
+const PROFILE_BUCKET = "profile-photos";
+const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB
 
 /** The user's profile photo URL, or null if using default avatar. */
 export async function getUserProfile(userId: string) {
@@ -27,18 +31,105 @@ export async function getUserProfile(userId: string) {
 // ---------------------------------------------------------------------------
 
 /**
- * Pick an image from gallery or camera, upload to Firebase Storage,
+ * Upload a blob to Supabase Storage and return its public URL.
+ * Throws friendly, actionable errors on failure.
+ */
+async function uploadProfilePhoto(userId: string, blob: Blob): Promise<string> {
+  if (blob.size > MAX_IMAGE_BYTES) {
+    throw new Error("Image is too large. Please choose a smaller photo (under 5 MB).");
+  }
+
+  await ensureSupabaseSession();
+
+  // Unique filename (timestamp) busts the image cache when re-uploading.
+  const fileName = `${userId}/${Date.now()}.jpg`;
+
+  const { error } = await supabase.storage
+    .from(PROFILE_BUCKET)
+    .upload(fileName, blob, { contentType: "image/jpeg", upsert: true });
+
+  if (error) {
+    const message = `${error.message || ""} ${error.status || ""}`.toLowerCase();
+    if (/permission|unauthorized|policy|row.?level|forbidden/.test(message)) {
+      throw new Error(
+        "Permission denied. Please check that the Supabase storage policies allow profile photo uploads."
+      );
+    }
+    if (/bucket|not found|does not exist/.test(message)) {
+      throw new Error(
+        "Storage is not configured correctly. Please check the profile-photos bucket exists."
+      );
+    }
+    if (/size|large|limit/.test(message)) {
+      throw new Error("Image is too large. Please choose a smaller photo.");
+    }
+    throw new Error("Upload failed. Check your internet connection and try again.");
+  }
+
+  const { data } = supabase.storage.from(PROFILE_BUCKET).getPublicUrl(fileName);
+
+  // Best-effort cleanup of older photos for this user (non-fatal).
+  try {
+    const { data: existing } = await supabase.storage
+      .from(PROFILE_BUCKET)
+      .list(userId, { limit: 50 });
+    const currentName = fileName.split("/").pop() as string;
+    const stale = (existing || [])
+      .filter((f) => f.name && f.name !== currentName)
+      .map((f) => `${userId}/${f.name}`);
+    if (stale.length) {
+      await supabase.storage.from(PROFILE_BUCKET).remove(stale);
+    }
+  } catch {
+    // Orphaned old photos are harmless — ignore cleanup failures.
+  }
+
+  return data.publicUrl;
+}
+
+/**
+ * Persist the photo URL to Firestore + Firebase Auth + the driver doc.
+ */
+async function savePhotoURL(userId: string, downloadURL: string) {
+  await setDoc(
+    doc(db, "users", userId),
+    { photoURL: downloadURL, updatedAt: serverTimestamp() },
+    { merge: true }
+  );
+
+  if (auth.currentUser) {
+    try {
+      await updateProfile(auth.currentUser, { photoURL: downloadURL });
+    } catch {
+      // Some auth providers don't allow profile updates
+    }
+  }
+
+  try {
+    const driverDoc = await getDoc(doc(db, "drivers", userId));
+    if (driverDoc.exists()) {
+      await setDoc(
+        doc(db, "drivers", userId),
+        { photoURL: downloadURL, updatedAt: serverTimestamp() },
+        { merge: true }
+      );
+    }
+  } catch {
+    // Best-effort
+  }
+}
+
+/**
+ * Pick an image from the gallery, upload to Supabase Storage,
  * and update the user's Firestore profile + Auth profile.
- * Returns the download URL of the uploaded image.
+ * Returns the public URL of the uploaded image.
  */
 export async function pickAndUploadPhoto(userId: string): Promise<string | null> {
-  // Request media library permission
   const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
   if (status !== "granted") {
     throw new Error("Permission to access photos is required.");
   }
 
-  // Launch image picker
   const result = await ImagePicker.launchImageLibraryAsync({
     mediaTypes: ["images"],
     allowsEditing: true,
@@ -52,83 +143,23 @@ export async function pickAndUploadPhoto(userId: string): Promise<string | null>
 
   const asset = result.assets[0];
 
-  // Upload to Firebase Storage
   let blob: Blob;
   try {
     const response = await fetch(asset.uri);
     blob = await response.blob();
-  } catch (fetchErr: any) {
+  } catch {
     throw new Error("Failed to read image file. Please try again.");
   }
 
-  // Validate blob size (Firebase Storage free tier limit: 5 MB)
-  if (blob.size > 5 * 1024 * 1024) {
-    throw new Error("Image is too large. Please choose a smaller photo (under 5 MB).");
-  }
-
-  const storageRef = ref(storage, `profile-photos/${userId}.jpg`);
-  try {
-    await uploadBytes(storageRef, blob, { contentType: "image/jpeg" });
-  } catch (uploadErr: any) {
-    const code = uploadErr?.code || "";
-    if (code.includes("storage/unauthorized") || code.includes("permission-denied")) {
-      throw new Error("Permission denied. Please check that Firebase Storage rules allow profile photo uploads.");
-    }
-    if (code.includes("storage/quota-exceeded")) {
-      throw new Error("Storage quota exceeded. Please contact support.");
-    }
-    if (code.includes("storage/canceled")) {
-      throw new Error("Upload was cancelled. Please try again.");
-    }
-    if (code.includes("storage/invalid") || code.includes("storage/bucket-not-found")) {
-      throw new Error("Storage is not configured correctly. Please contact support.");
-    }
-    throw new Error(uploadErr?.message || "Upload failed. Check your internet connection and try again.");
-  }
-
-  // Get download URL
-  let downloadURL: string;
-  try {
-    downloadURL = await getDownloadURL(storageRef);
-  } catch {
-    throw new Error("Upload succeeded but could not get the image URL. Please try again.");
-  }
-
-  // Update Firestore user document
-  await setDoc(
-    doc(db, "users", userId),
-    { photoURL: downloadURL, updatedAt: serverTimestamp() },
-    { merge: true }
-  );
-
-  // Update Firebase Auth profile (if available)
-  if (auth.currentUser) {
-    try {
-      await updateProfile(auth.currentUser, { photoURL: downloadURL });
-    } catch {
-      // Some auth providers don't allow profile updates
-    }
-  }
-
-  // Also update driver profile if they're a driver
-  try {
-    const driverDoc = await getDoc(doc(db, "drivers", userId));
-    if (driverDoc.exists()) {
-      await setDoc(
-        doc(db, "drivers", userId),
-        { photoURL: downloadURL, updatedAt: serverTimestamp() },
-        { merge: true }
-      );
-    }
-  } catch {
-    // Best-effort
-  }
-
+  const downloadURL = await uploadProfilePhoto(userId, blob);
+  await savePhotoURL(userId, downloadURL);
   return downloadURL;
 }
 
 /**
- * Take a photo with the camera, upload, and update profile.
+ * Take a photo with the camera, upload to Supabase Storage,
+ * and update the user's Firestore profile + Auth profile.
+ * Returns the public URL of the uploaded image.
  */
 export async function takeAndUploadPhoto(userId: string): Promise<string | null> {
   const { status } = await ImagePicker.requestCameraPermissionsAsync();
@@ -148,7 +179,6 @@ export async function takeAndUploadPhoto(userId: string): Promise<string | null>
 
   const asset = result.assets[0];
 
-  // Read image as blob with error handling
   let blob: Blob;
   try {
     const response = await fetch(asset.uri);
@@ -157,56 +187,8 @@ export async function takeAndUploadPhoto(userId: string): Promise<string | null>
     throw new Error("Failed to read camera image. Please try again.");
   }
 
-  if (blob.size > 5 * 1024 * 1024) {
-    throw new Error("Image is too large. Please try again with lower quality.");
-  }
-
-  const storageRef = ref(storage, `profile-photos/${userId}.jpg`);
-  try {
-    await uploadBytes(storageRef, blob, { contentType: "image/jpeg" });
-  } catch (uploadErr: any) {
-    const code = uploadErr?.code || "";
-    if (code.includes("storage/unauthorized") || code.includes("permission-denied")) {
-      throw new Error("Permission denied. Please check that Firebase Storage rules allow profile photo uploads.");
-    }
-    throw new Error(uploadErr?.message || "Upload failed. Check your internet connection and try again.");
-  }
-
-  let downloadURL: string;
-  try {
-    downloadURL = await getDownloadURL(storageRef);
-  } catch {
-    throw new Error("Upload succeeded but could not get the image URL. Please try again.");
-  }
-
-  await setDoc(
-    doc(db, "users", userId),
-    { photoURL: downloadURL, updatedAt: serverTimestamp() },
-    { merge: true }
-  );
-
-  if (auth.currentUser) {
-    try {
-      await updateProfile(auth.currentUser, { photoURL: downloadURL });
-    } catch {
-      // ignore
-    }
-  }
-
-  // Update driver profile if they're a driver
-  try {
-    const driverDoc = await getDoc(doc(db, "drivers", userId));
-    if (driverDoc.exists()) {
-      await setDoc(
-        doc(db, "drivers", userId),
-        { photoURL: downloadURL, updatedAt: serverTimestamp() },
-        { merge: true }
-      );
-    }
-  } catch {
-    // Best-effort
-  }
-
+  const downloadURL = await uploadProfilePhoto(userId, blob);
+  await savePhotoURL(userId, downloadURL);
   return downloadURL;
 }
 
