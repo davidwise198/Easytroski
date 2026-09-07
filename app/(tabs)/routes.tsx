@@ -24,6 +24,7 @@ import { useMemo as useM } from "react";
 import { Route } from "../../src/types/models";
 
 const RECENTS_KEY = "easyTroski.recentSearches";
+const LAST_ROUTE_KEY = "easyTroski.lastExpandedRoute";
 
 export default function RoutesScreen() {
   const { colors } = useThemeColors();
@@ -40,7 +41,6 @@ export default function RoutesScreen() {
     recentsTitle: { color: colors.textSecondary },
     recentsClear: { color: colors.primary },
     headerIcon: { backgroundColor: colors.blueWash },
-    eyebrow: { color: colors.primary },
   }), [colors]);
   const [routes, setRoutes] = useState<Route[]>([]);
   const [loading, setLoading] = useState(true);
@@ -86,8 +86,29 @@ export default function RoutesScreen() {
     void loadRoutes();
   }, [loadRoutes]);
 
+  // Restore the last-selected route once the list loads, so the route the
+  // user chose stays selected when they come back to this page.
+  useEffect(() => {
+    if (routes.length === 0) return;
+    AsyncStorage.getItem(LAST_ROUTE_KEY)
+      .then((id) => {
+        if (id && routes.some((r) => r.id === id)) {
+          setExpandedRouteId(id);
+        }
+      })
+      .catch(() => {});
+  }, [routes]);
+
   const toggleRoute = (routeId: string) => {
-    setExpandedRouteId(expandedRouteId === routeId ? null : routeId);
+    setExpandedRouteId((prev) => {
+      const next = prev === routeId ? null : routeId;
+      if (next) {
+        AsyncStorage.setItem(LAST_ROUTE_KEY, next).catch(() => {});
+      } else {
+        AsyncStorage.removeItem(LAST_ROUTE_KEY).catch(() => {});
+      }
+      return next;
+    });
   };
 
   // ── Search engine ──────────────────────────────────────────────────────
@@ -213,13 +234,9 @@ export default function RoutesScreen() {
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.headerRow}>
-          <View>
-            <AppText variant="caption" style={[styles.eyebrow, ds.eyebrow]}>PLAN YOUR JOURNEY</AppText>
-            <AppText variant="title" style={[styles.title, ds.title]}>Find a route</AppText>
-            <AppText variant="body" style={[styles.subtitle, ds.subtitle]}>Choose where you are going today.</AppText>
-          </View>
+          <AppText variant="title" style={[styles.title, ds.title]}>Find a ride</AppText>
           <View style={[styles.headerIcon, ds.headerIcon]}>
-            <MaterialCommunityIcons name="map-search-outline" size={25} color={COLORS.primary} />
+            <MaterialCommunityIcons name="map-search-outline" size={22} color={COLORS.primary} />
           </View>
         </View>
 
@@ -461,30 +478,19 @@ export default function RoutesScreen() {
 const styles = StyleSheet.create({
   content: {
     paddingHorizontal: SPACING.lg,
-    paddingTop: 60,
+    paddingTop: 40,
     paddingBottom: 160,
   },
   headerRow: {
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: SPACING.xl,
-  },
-  eyebrow: {
-    color: COLORS.primary,
-    fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: 1.1,
-    marginBottom: SPACING.xs,
+    marginBottom: SPACING.md,
   },
   title: {
     color: COLORS.navy,
-    fontSize: 32,
-    lineHeight: 39,
-  },
-  subtitle: {
-    color: COLORS.textSecondary,
-    marginTop: SPACING.xs,
+    fontSize: 28,
+    lineHeight: 34,
   },
   headerIcon: {
     width: 48,
@@ -504,7 +510,7 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.veryLightBlue,
     borderWidth: 1,
     borderColor: COLORS.blueWash,
-    marginBottom: SPACING.lg,
+    marginBottom: 14,
   },
   searchInput: {
     flex: 1,
@@ -547,7 +553,7 @@ const styles = StyleSheet.create({
 
   /* ── Recent searches ── */
   recentsBox: {
-    marginTop: -SPACING.lg + SPACING.sm,
+    marginTop: -6,
     marginBottom: SPACING.lg,
   },
   recentsHeader: {
