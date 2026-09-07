@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Alert,
   Animated,
+  Image,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -21,6 +22,7 @@ import { useAuth } from "../../src/contexts/AuthContext";
 import { useThemeColors } from "../../src/contexts/ThemeContext";
 import { useMemo } from "react";
 import { getPassengerBookings } from "../../src/services/transport";
+import { getPhotoURL, getUserProfile } from "../../src/services/profile";
 import { deleteDoc, doc } from "firebase/firestore";
 import { db } from "../../src/services/firebase";
 import { COLORS, SPACING } from "../../src/theme";
@@ -118,6 +120,7 @@ export default function PassengerAccountScreen() {
     avatarLarge: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.glassBorder },
   }), [colors]);
   const [bookings, setBookings] = useState<Booking[]>([]);
+  const [profile, setProfile] = useState<Record<string, any> | null>(null);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
@@ -136,8 +139,12 @@ export default function PassengerAccountScreen() {
   const loadData = useCallback(async () => {
     if (!user?.uid) return;
     try {
-      const data = await getPassengerBookings(user.uid);
+      const [data, profileData] = await Promise.all([
+        getPassengerBookings(user.uid),
+        getUserProfile(user.uid),
+      ]);
       setBookings(data);
+      setProfile(profileData);
     } catch (error) {
       console.error("Failed to load bookings:", error);
     }
@@ -189,7 +196,8 @@ export default function PassengerAccountScreen() {
   ).length;
   const totalSeats = bookings.reduce((sum, b) => sum + (b.seats || 1), 0);
 
-  const displayName = user?.displayName || "Passenger";
+  const displayName = profile?.name || user?.displayName || "Passenger";
+  const photoURL = getPhotoURL(user, profile);
   const email = user?.email || "—";
   const phone = user?.phoneNumber || "—";
   const memberSince = user?.metadata?.creationTime
@@ -237,11 +245,19 @@ export default function PassengerAccountScreen() {
             ]}
           >
             <View style={[styles.avatarLarge, ds.avatarLarge]}>
-              <MaterialCommunityIcons
-                name="account"
-                size={40}
-                color={colors.primary}
-              />
+              {photoURL ? (
+                <Image
+                  source={{ uri: photoURL }}
+                  style={styles.avatarImage}
+                  resizeMode="cover"
+                />
+              ) : (
+                <MaterialCommunityIcons
+                  name="account"
+                  size={40}
+                  color={colors.primary}
+                />
+              )}
             </View>
             <AppText variant="heading" style={[styles.profileName, ds.profileName]}>
               {displayName}
@@ -463,11 +479,17 @@ const styles = StyleSheet.create({
   avatarLarge: {
     width: 80,
     height: 80,
-    borderRadius: 24,
+    borderRadius: 40,
     alignItems: "center",
     justifyContent: "center",
+    overflow: "hidden",
     backgroundColor: COLORS.blueWash,
     marginBottom: SPACING.md,
+  },
+  avatarImage: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
   },
   profileName: {
     color: COLORS.navy,

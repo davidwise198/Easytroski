@@ -108,6 +108,7 @@ export default function HomeScreen() {
       },
       contextTitle: { color: colors.text },
       contextText: { color: colors.textSecondary },
+      aboutEyebrow: { color: colors.textSecondary },
     }),
     [colors]
   );
@@ -223,9 +224,6 @@ export default function HomeScreen() {
           <FadeSlideIn delay={0}>
             <View style={styles.header}>
               <View style={styles.headerLeft}>
-                <AppText variant="caption" style={styles.eyebrow}>
-                  PASSENGER
-                </AppText>
                 <AppText variant="title" style={[styles.greeting, ds.greeting]}>
                   {greeting},
                 </AppText>
@@ -321,6 +319,47 @@ export default function HomeScreen() {
               </Pressable>
             </View>
           </FadeSlideIn>
+
+          {/* ─── About EasyTroski ─── */}
+          <FadeSlideIn delay={320}>
+            <View style={[styles.aboutCard, ds.contextCard]}>
+              <AppText
+                variant="caption"
+                style={[styles.aboutEyebrow, ds.aboutEyebrow]}
+              >
+                ABOUT EASY TROSKI
+              </AppText>
+              <AppText variant="body" style={[styles.aboutBody, ds.contextText]}>
+                EasyTroski connects you with trusted trotro drivers across
+                Ghana — search any route or stop, book your seat, and track
+                your driver in real time.
+              </AppText>
+              <View style={styles.aboutFeatures}>
+                {[
+                  { icon: "map-search", label: "Search stops" },
+                  { icon: "seat", label: "Book seats" },
+                  { icon: "crosshairs-gps", label: "Live tracking" },
+                ].map((f) => (
+                  <View
+                    key={f.label}
+                    style={[styles.aboutFeature, { backgroundColor: colors.veryLightBlue }]}
+                  >
+                    <MaterialCommunityIcons
+                      name={f.icon as any}
+                      size={15}
+                      color={COLORS.primary}
+                    />
+                    <AppText
+                      variant="caption"
+                      style={[styles.aboutFeatureText, ds.contextText]}
+                    >
+                      {f.label}
+                    </AppText>
+                  </View>
+                ))}
+              </View>
+            </View>
+          </FadeSlideIn>
         </ScrollView>
       </AppBackground>
     </AuthGate>
@@ -349,13 +388,6 @@ const styles = StyleSheet.create({
   headerRight: {
     alignItems: "flex-end",
     gap: 8,
-  },
-  eyebrow: {
-    color: COLORS.primary,
-    fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: 1.2,
-    marginBottom: SPACING.xs,
   },
   greeting: {
     color: COLORS.textSecondary,
@@ -470,5 +502,41 @@ const styles = StyleSheet.create({
     color: COLORS.white,
     fontWeight: "700",
     fontSize: 12,
+  },
+
+  /* ── About card ── */
+  aboutCard: {
+    padding: SPACING.lg,
+    borderRadius: 18,
+    borderWidth: 1,
+    marginTop: SPACING.lg,
+  },
+  aboutEyebrow: {
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 1.2,
+    marginBottom: SPACING.sm,
+  },
+  aboutBody: {
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: SPACING.md,
+  },
+  aboutFeatures: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: SPACING.sm,
+  },
+  aboutFeature: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  aboutFeatureText: {
+    fontSize: 11,
+    fontWeight: "600",
   },
 });
