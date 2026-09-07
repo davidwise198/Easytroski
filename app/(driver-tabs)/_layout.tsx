@@ -14,24 +14,22 @@ function tabIcon(name: IconName) {
   );
 }
 
-export default function PassengerTabsLayout() {
+export default function DriverTabsLayout() {
   const { user, userRole, loading } = useAuth();
   const { colors, isDark } = useThemeColors();
   const insets = useSafeAreaInsets();
 
-  // Only passengers may use these tabs.
+  // Only drivers may use these tabs.
   useEffect(() => {
     if (loading) return;
     if (!user) {
       router.replace("/auth/login");
-    } else if (userRole === "driver") {
-      router.replace("/driver-home");
-    } else if (userRole === "admin") {
-      router.replace("/admin-routes");
+    } else if (userRole !== "driver") {
+      router.replace(userRole === "admin" ? "/admin-routes" : "/home");
     }
   }, [loading, user, userRole]);
 
-  if (loading || !user || userRole === "driver" || userRole === "admin") {
+  if (loading || !user || userRole !== "driver") {
     return null;
   }
 
@@ -53,19 +51,15 @@ export default function PassengerTabsLayout() {
       }}
     >
       <Tabs.Screen
-        name="home"
+        name="driver-home"
         options={{ title: "Home", tabBarIcon: tabIcon("home-variant") }}
       />
       <Tabs.Screen
-        name="routes"
-        options={{ title: "Routes", tabBarIcon: tabIcon("map-search") }}
-      />
-      <Tabs.Screen
-        name="map"
+        name="driver-map"
         options={{ title: "Map", tabBarIcon: tabIcon("map-outline") }}
       />
       <Tabs.Screen
-        name="trips"
+        name="driver-trips"
         options={{ title: "Trips", tabBarIcon: tabIcon("history") }}
       />
     </Tabs>
