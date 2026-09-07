@@ -9,6 +9,7 @@ import {
   View,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
 
 import AppBackground from "../src/components/ui/AppBackground";
@@ -22,6 +23,8 @@ import { useThemeColors } from "../src/contexts/ThemeContext";
 import { useMemo as useM } from "react";
 import { Route } from "../src/types/models";
 
+const RECENTS_KEY = "easyTroski.recentSearches";
+
 export default function RoutesScreen() {
   const { colors } = useThemeColors();
   const ds = useM(() => ({
@@ -32,6 +35,10 @@ export default function RoutesScreen() {
     searchInput: { color: colors.text },
     searchBar: { backgroundColor: colors.veryLightBlue, borderColor: colors.blueWash },
     suggestBox: { backgroundColor: colors.surface, borderColor: colors.glassBorder },
+    recentChip: { backgroundColor: colors.veryLightBlue, borderColor: colors.blueWash },
+    recentChipText: { color: colors.text },
+    recentsTitle: { color: colors.textSecondary },
+    recentsClear: { color: colors.primary },
     headerIcon: { backgroundColor: colors.blueWash },
     eyebrow: { color: colors.primary },
   }), [colors]);
@@ -161,6 +168,40 @@ export default function RoutesScreen() {
 
   const activeQuery = normalizeField(searchQuery);
 
+  // ── Recent searches (persisted) ─────────────────────────────────────────
+  const [recentSearches, setRecentSearches] = useState<string[]>([]);
+
+  useEffect(() => {
+    AsyncStorage.getItem(RECENTS_KEY)
+      .then((raw) => {
+        if (!raw) return;
+        try {
+          const parsed = JSON.parse(raw);
+          if (Array.isArray(parsed)) {
+            setRecentSearches(parsed.filter((s) => typeof s === "string").slice(0, 6));
+          }
+        } catch {
+          // Corrupt data — ignore.
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const commitSearch = useCallback((raw: string) => {
+    const term = normalizeField(raw);
+    if (!term) return;
+    setRecentSearches((prev) => {
+      const next = [term, ...prev.filter((s) => normalizeField(s) !== term)].slice(0, 6);
+      AsyncStorage.setItem(RECENTS_KEY, JSON.stringify(next)).catch(() => {});
+      return next;
+    });
+  }, []);
+
+  const clearRecents = useCallback(() => {
+    setRecentSearches([]);
+    AsyncStorage.removeItem(RECENTS_KEY).catch(() => {});
+  }, []);
+
   return (
     <AuthGate>
     <AppBackground>
@@ -217,6 +258,8 @@ export default function RoutesScreen() {
                 setSuggestionsOpen(true);
               }}
               onFocus={() => setSuggestionsOpen(true)}
+              onSubmitEditing={() => commitSearch(searchQuery)}
+              returnKeyType="search"
               autoCorrect={false}
             />
             {searchQuery.length > 0 && (
@@ -231,6 +274,43 @@ export default function RoutesScreen() {
             )}
           </View>
 
+          {/* ─── Recent searches ─── */}
+          {!activeQuery && recentSearches.length > 0 && (
+            <View style={styles.recentsBox}>
+              <View style={styles.recentsHeader}>
+                <AppText variant="caption" style={[styles.recentsTitle, ds.recentsTitle]}>
+                  RECENT SEARCHES
+                </AppText>
+                <Pressable onPress={clearRecents} hitSlop={8}>
+                  <AppText variant="caption" style={[styles.recentsClear, ds.recentsClear]}>
+                    Clear all
+                  </AppText>
+                </Pressable>
+              </View>
+              <View style={styles.recentsChips}>
+                {recentSearches.map((term) => (
+                  <Pressable
+                    key={term}
+                    style={({ pressed }) => [
+                      styles.recentChip,
+                      ds.recentChip,
+                      pressed && styles.recentChipPressed,
+                    ]}
+                    onPress={() => {
+                      setSearchQuery(term);
+                      setSuggestionsOpen(true);
+                    }}
+                  >
+                    <MaterialCommunityIcons name="history" size={14} color={colors.textSecondary} />
+                    <AppText variant="caption" style={[styles.recentChipText, ds.recentChipText]}>
+                      {term}
+                    </AppText>
+                  </Pressable>
+                ))}
+              </View>
+            </View>
+          )}
+
           {/* ─── Live stop suggestions ─── */}
           {suggestionsOpen && activeQuery && suggestions.length > 0 && (
             <View style={[styles.suggestBox, ds.suggestBox]}>
@@ -241,6 +321,7 @@ export default function RoutesScreen() {
                   onPress={() => {
                     setExpandedRouteId(s.routeId);
                     setSuggestionsOpen(false);
+                    commitSearch(s.label);
                   }}
                 >
                   <MaterialCommunityIcons name="map-marker" size={16} color={colors.primary} />
@@ -276,7 +357,10 @@ export default function RoutesScreen() {
                       styles.routeHeader,
                       pressed && styles.routeHeaderPressed,
                     ]}
-                    onPress={() => toggleRoute(route.id)}
+                    onPress={() => {
+                      if (activeQuery) commitSearch(searchQuery);
+                      toggleRoute(route.id);
+                    }}
                   >
                     <View style={styles.routeIcon}>
                       <MaterialCommunityIcons name="transit-connection-variant" size={24} color="#FFFFFF" />
@@ -459,6 +543,48 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     fontSize: 12,
     marginTop: 1,
+  },
+
+  /* ── Recent searches ── */
+  recentsBox: {
+    marginTop: -SPACING.lg + SPACING.sm,
+    marginBottom: SPACING.lg,
+  },
+  recentsHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: SPACING.sm,
+  },
+  recentsTitle: {
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 1,
+  },
+  recentsClear: {
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  recentsChips: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: SPACING.sm,
+  },
+  recentChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 999,
+    borderWidth: 1,
+  },
+  recentChipPressed: {
+    opacity: 0.7,
+  },
+  recentChipText: {
+    fontSize: 13,
+    fontWeight: "600",
   },
   routeList: {
     gap: SPACING.md,
