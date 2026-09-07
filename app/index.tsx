@@ -33,9 +33,9 @@ export default function Index() {
       if (userRole === "admin") {
         router.replace("/admin-routes");
       } else if (userRole === "driver") {
-        router.replace("/driver-dashboard");
+        router.replace("/driver-home");
       } else {
-        router.replace("/passenger-dashboard");
+        router.replace("/home");
       }
     }
   }, [loading, user, userRole]);

@@ -31,7 +31,7 @@ export default function RoleSelectionScreen() {
       if (role === "driver") {
         router.replace("/auth/driver-onboarding");
       } else {
-        router.replace("/passenger-dashboard");
+        router.replace("/home");
       }
     } catch (error) {
       console.error("Role selection error:", error);

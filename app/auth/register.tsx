@@ -226,9 +226,9 @@ export default function RegisterScreen() {
       // Manual driver signup already collected all vehicle details —
       // skip onboarding and go straight to the dashboard.
       if (userRole === "driver") {
-        router.replace("/driver-dashboard");
+        router.replace("/driver-home");
       } else {
-        router.replace("/passenger-dashboard");
+        router.replace("/home");
       }
     } catch (error) {
       console.error("Register error:", error);
@@ -257,7 +257,7 @@ export default function RegisterScreen() {
       if (userRole === "driver") {
         router.replace("/auth/driver-onboarding");
       } else {
-        router.replace("/passenger-dashboard");
+        router.replace("/home");
       }
     } catch (error) {
       const errorCode = getErrorCode(error);

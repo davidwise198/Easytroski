@@ -67,7 +67,7 @@ export default function DriverOnboardingScreen() {
         const { updateUserProfile } = await import("../../src/services/auth");
         await updateUserProfile(user.uid, { phoneNumber: phoneNumber.trim() });
       }
-      router.replace("/driver-dashboard");
+      router.replace("/driver-home");
     } catch (error) {
       console.error("Driver onboarding error:", error);
       showToast("error", "Setup failed", getFriendlyError(error));

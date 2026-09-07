@@ -12,16 +12,16 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router } from "expo-router";
 
-import AppBackground from "../src/components/ui/AppBackground";
-import AppText from "../src/components/ui/AppText";
-import PrimaryButton from "../src/components/ui/PrimaryButton";
-import AuthGate from "../src/components/AuthGate";
-import { getActiveRoutes } from "../src/services/transport";
-import { getRouteAvailableSeats } from "../src/services/map";
-import { COLORS, SPACING } from "../src/theme";
-import { useThemeColors } from "../src/contexts/ThemeContext";
+import AppBackground from "../../src/components/ui/AppBackground";
+import AppText from "../../src/components/ui/AppText";
+import PrimaryButton from "../../src/components/ui/PrimaryButton";
+import AuthGate from "../../src/components/AuthGate";
+import { getActiveRoutes } from "../../src/services/transport";
+import { getRouteAvailableSeats } from "../../src/services/map";
+import { COLORS, SPACING } from "../../src/theme";
+import { useThemeColors } from "../../src/contexts/ThemeContext";
 import { useMemo as useM } from "react";
-import { Route } from "../src/types/models";
+import { Route } from "../../src/types/models";
 
 const RECENTS_KEY = "easyTroski.recentSearches";
 
@@ -437,7 +437,7 @@ export default function RoutesScreen() {
 
                       <PrimaryButton
                         title="View drivers on map"
-                        onPress={() => router.push(`/passenger-map?routeId=${route.id}`)}
+                        onPress={() => router.navigate(`/map?routeId=${route.id}`)}
                         variant="outline"
                         style={styles.viewMapButton}
                       />
@@ -451,7 +451,7 @@ export default function RoutesScreen() {
           </>
         )}
 
-        <PrimaryButton title="Back to dashboard" onPress={() => router.back()} variant="outline" style={styles.backButton} />
+        <PrimaryButton title="Back to dashboard" onPress={() => router.navigate("/home")} variant="outline" style={styles.backButton} />
       </ScrollView>
     </AppBackground>
     </AuthGate>

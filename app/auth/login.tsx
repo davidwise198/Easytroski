@@ -130,7 +130,7 @@ export default function LoginScreen() {
       } else if (role === "admin") {
         router.replace("/admin-routes");
       } else {
-        router.replace(role === "driver" ? "/driver-dashboard" : "/passenger-dashboard");
+        router.replace(role === "driver" ? "/driver-home" : "/home");
       }
     } catch (error) {
       console.error("Login error:", error);
@@ -151,7 +151,7 @@ export default function LoginScreen() {
       } else if (role === "admin") {
         router.replace("/admin-routes");
       } else {
-        router.replace(role === "driver" ? "/driver-dashboard" : "/passenger-dashboard");
+        router.replace(role === "driver" ? "/driver-home" : "/home");
       }
     } catch (error) {
       console.error("Google login error:", error);

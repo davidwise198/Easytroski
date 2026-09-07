@@ -14,14 +14,14 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { router } from "expo-router";
 
-import AppBackground from "../src/components/ui/AppBackground";
-import AppText from "../src/components/ui/AppText";
-import PrimaryButton from "../src/components/ui/PrimaryButton";
-import AuthGate from "../src/components/AuthGate";
-import { useAuth } from "../src/contexts/AuthContext";
-import { useThemeColors } from "../src/contexts/ThemeContext";
+import AppBackground from "../../src/components/ui/AppBackground";
+import AppText from "../../src/components/ui/AppText";
+import PrimaryButton from "../../src/components/ui/PrimaryButton";
+import AuthGate from "../../src/components/AuthGate";
+import { useAuth } from "../../src/contexts/AuthContext";
+import { useThemeColors } from "../../src/contexts/ThemeContext";
 import { useMemo } from "react";
-import ThemeToggle from "../src/components/ui/ThemeToggle";
+import ThemeToggle from "../../src/components/ui/ThemeToggle";
 import {
   getActiveRoutes,
   getDriverActiveTrip,
@@ -30,11 +30,11 @@ import {
   endTrip,
   updateDriverSeats,
   updateDriverLocation,
-} from "../src/services/transport";
-import { getUserProfile, getPhotoURL } from "../src/services/profile";
-import { COLORS, SPACING } from "../src/theme";
-import { Route, Trip } from "../src/types/models";
-import { showToast } from "../src/utils/toast";
+} from "../../src/services/transport";
+import { getUserProfile, getPhotoURL } from "../../src/services/profile";
+import { COLORS, SPACING } from "../../src/theme";
+import { Route, Trip } from "../../src/types/models";
+import { showToast } from "../../src/utils/toast";
 
 // ---------------------------------------------------------------------------
 // Animated entrance wrapper
@@ -463,7 +463,7 @@ export default function DriverDashboardScreen() {
             <View style={styles.tilesGrid}>
               <Pressable
                 style={({ pressed }) => [[styles.tile, ds.tile], pressed && styles.tilePressed]}
-                onPress={() => router.push("/driver-map")}
+                onPress={() => router.navigate("/driver-map")}
               >
                 <View style={[styles.tileIconWrap, { backgroundColor: COLORS.primary + "18" }]}>
                   <MaterialCommunityIcons
@@ -479,7 +479,7 @@ export default function DriverDashboardScreen() {
 
               <Pressable
                 style={({ pressed }) => [[styles.tile, ds.tile], pressed && styles.tilePressed]}
-                onPress={() => router.push("/driver-account")}
+                onPress={() => router.navigate("/driver-trips")}
               >
                 <View style={[styles.tileIconWrap, { backgroundColor: COLORS.accent + "18" }]}>
                   <MaterialCommunityIcons

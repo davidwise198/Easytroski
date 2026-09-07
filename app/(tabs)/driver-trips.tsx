@@ -11,17 +11,17 @@ import {
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 
-import AppBackground from "../src/components/ui/AppBackground";
-import AppText from "../src/components/ui/AppText";
-import AccountRow from "../src/components/ui/AccountRow";
-import StatCard from "../src/components/ui/StatCard";
-import AuthGate from "../src/components/AuthGate";
-import { useAuth } from "../src/contexts/AuthContext";
-import { useThemeColors } from "../src/contexts/ThemeContext";
+import AppBackground from "../../src/components/ui/AppBackground";
+import AppText from "../../src/components/ui/AppText";
+import AccountRow from "../../src/components/ui/AccountRow";
+import StatCard from "../../src/components/ui/StatCard";
+import AuthGate from "../../src/components/AuthGate";
+import { useAuth } from "../../src/contexts/AuthContext";
+import { useThemeColors } from "../../src/contexts/ThemeContext";
 import { useMemo } from "react";
-import { getDriverTrips, getDriverProfile } from "../src/services/transport";
-import { COLORS, SPACING } from "../src/theme";
-import { Trip, TripStatus } from "../src/types/models";
+import { getDriverTrips, getDriverProfile } from "../../src/services/transport";
+import { COLORS, SPACING } from "../../src/theme";
+import { Trip, TripStatus } from "../../src/types/models";
 
 // ── Helpers ──
 
@@ -203,7 +203,7 @@ export default function DriverAccountScreen() {
           }
         >
           {/* ── Back ── */}
-          <Pressable style={[styles.backBtn, ds.backBtn]} onPress={() => router.back()}>
+          <Pressable style={[styles.backBtn, ds.backBtn]} onPress={() => router.navigate("/driver-home")}>
             <MaterialCommunityIcons
               name="arrow-left"
               size={22}

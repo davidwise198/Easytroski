@@ -8,26 +8,26 @@ import {
   View,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { MapView, MapViewType, Marker, PROVIDER_DEFAULT } from "../src/components/map/MapExports";
+import { MapView, MapViewType, Marker, PROVIDER_DEFAULT } from "../../src/components/map/MapExports";
 import * as Location from "expo-location";
 import { router } from "expo-router";
 
-import AuthGate from "../src/components/AuthGate";
-import AppText from "../src/components/ui/AppText";
-import PrimaryButton from "../src/components/ui/PrimaryButton";
-import { useLocation } from "../src/contexts/LocationContext";
-import { useAuth } from "../src/contexts/AuthContext";
+import AuthGate from "../../src/components/AuthGate";
+import AppText from "../../src/components/ui/AppText";
+import PrimaryButton from "../../src/components/ui/PrimaryButton";
+import { useLocation } from "../../src/contexts/LocationContext";
+import { useAuth } from "../../src/contexts/AuthContext";
 import {
   subscribeDriverActiveTrip,
   subscribeDriverBookings,
   getDriverPickupLocations,
-} from "../src/services/map";
-import { getActiveRoutes, startTrip, endTrip, confirmBooking, cancelBooking, updateBookingStatus, updateDriverSeats, incrementDriverSeats, updateDriverLocation } from "../src/services/transport";
-import { COLORS, SPACING } from "../src/theme";
-import { useThemeColors } from "../src/contexts/ThemeContext";
+} from "../../src/services/map";
+import { getActiveRoutes, startTrip, endTrip, confirmBooking, cancelBooking, updateBookingStatus, updateDriverSeats, incrementDriverSeats, updateDriverLocation } from "../../src/services/transport";
+import { COLORS, SPACING } from "../../src/theme";
+import { useThemeColors } from "../../src/contexts/ThemeContext";
 import { useMemo } from "react";
-import { Route, Trip, TripStatus } from "../src/types/models";
-import { showToast } from "../src/utils/toast";
+import { Route, Trip, TripStatus } from "../../src/types/models";
+import { showToast } from "../../src/utils/toast";
 
 // Ghana/Omanjor default center
 const DEFAULT_REGION = {
@@ -404,7 +404,7 @@ export default function DriverMapScreen() {
 
         {/* ---- Top bar ---- */}
         <View style={[styles.topBar, ds.topBar]}>
-          <Pressable style={[styles.iconButton, ds.iconButton]} onPress={() => router.back()}>
+          <Pressable style={[styles.iconButton, ds.iconButton]} onPress={() => router.navigate("/driver-home")}>
             <MaterialCommunityIcons name="arrow-left" size={22} color={COLORS.primary} />
           </Pressable>
           <View style={styles.topBarTitle}>

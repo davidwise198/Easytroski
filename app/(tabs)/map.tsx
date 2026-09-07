@@ -7,29 +7,29 @@ import {
   View,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { MapView, MapViewType, Marker, PROVIDER_DEFAULT } from "../src/components/map/MapExports";
+import { MapView, MapViewType, Marker, PROVIDER_DEFAULT } from "../../src/components/map/MapExports";
 import { router, useLocalSearchParams } from "expo-router";
 
-import AuthGate from "../src/components/AuthGate";
-import AppText from "../src/components/ui/AppText";
-import PrimaryButton from "../src/components/ui/PrimaryButton";
-import { TripMarker } from "../src/components/map/TripMarker";
-import { useLocation } from "../src/contexts/LocationContext";
-import { useAuth } from "../src/contexts/AuthContext";
-import { getActiveTripMarkers, subscribeActiveTripMarkers, subscribeDriverLocation } from "../src/services/map";
-import StarRating from "../src/components/ui/StarRating";
-import { createBooking, cancelBooking, rateDriver, getActiveRoutes } from "../src/services/transport";
-import { auth, db } from "../src/services/firebase";
+import AuthGate from "../../src/components/AuthGate";
+import AppText from "../../src/components/ui/AppText";
+import PrimaryButton from "../../src/components/ui/PrimaryButton";
+import { TripMarker } from "../../src/components/map/TripMarker";
+import { useLocation } from "../../src/contexts/LocationContext";
+import { useAuth } from "../../src/contexts/AuthContext";
+import { getActiveTripMarkers, subscribeActiveTripMarkers, subscribeDriverLocation } from "../../src/services/map";
+import StarRating from "../../src/components/ui/StarRating";
+import { createBooking, cancelBooking, rateDriver, getActiveRoutes } from "../../src/services/transport";
+import { auth, db } from "../../src/services/firebase";
 import { doc, onSnapshot, updateDoc } from "firebase/firestore";
-import { COLORS, SPACING } from "../src/theme";
-import { useThemeColors } from "../src/contexts/ThemeContext";
+import { COLORS, SPACING } from "../../src/theme";
+import { useThemeColors } from "../../src/contexts/ThemeContext";
 import { useMemo } from "react";
-import { showToast } from "../src/utils/toast";
+import { showToast } from "../../src/utils/toast";
 import {
   ActiveTripMarker,
   Route,
   TripStatus,
-} from "../src/types/models";
+} from "../../src/types/models";
 
 // Ghana/Omanjor default center (used when location is unavailable)
 const DEFAULT_REGION = {
@@ -407,7 +407,7 @@ export default function PassengerMapScreen() {
 
         {/* ---- Top bar ---- */}
         <View style={[styles.topBar, ds.topBar]}>
-          <Pressable style={[styles.iconButton, ds.iconButton]} onPress={() => router.back()}>
+          <Pressable style={[styles.iconButton, ds.iconButton]} onPress={() => router.navigate("/home")}>
             <MaterialCommunityIcons name="arrow-left" size={22} color={COLORS.primary} />
           </Pressable>
 

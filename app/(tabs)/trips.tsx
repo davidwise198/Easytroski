@@ -12,20 +12,20 @@ import {
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 
-import AppBackground from "../src/components/ui/AppBackground";
-import AppText from "../src/components/ui/AppText";
-import AccountRow from "../src/components/ui/AccountRow";
-import StatCard from "../src/components/ui/StatCard";
-import AuthGate from "../src/components/AuthGate";
-import { useAuth } from "../src/contexts/AuthContext";
-import { useThemeColors } from "../src/contexts/ThemeContext";
+import AppBackground from "../../src/components/ui/AppBackground";
+import AppText from "../../src/components/ui/AppText";
+import AccountRow from "../../src/components/ui/AccountRow";
+import StatCard from "../../src/components/ui/StatCard";
+import AuthGate from "../../src/components/AuthGate";
+import { useAuth } from "../../src/contexts/AuthContext";
+import { useThemeColors } from "../../src/contexts/ThemeContext";
 import { useMemo } from "react";
-import { getPassengerBookings } from "../src/services/transport";
+import { getPassengerBookings } from "../../src/services/transport";
 import { deleteDoc, doc } from "firebase/firestore";
-import { db } from "../src/services/firebase";
-import { COLORS, SPACING } from "../src/theme";
-import { Booking, BookingStatus } from "../src/types/models";
-import { showToast } from "../src/utils/toast";
+import { db } from "../../src/services/firebase";
+import { COLORS, SPACING } from "../../src/theme";
+import { Booking, BookingStatus } from "../../src/types/models";
+import { showToast } from "../../src/utils/toast";
 
 // ── Helpers ──
 
@@ -211,7 +211,7 @@ export default function PassengerAccountScreen() {
           }
         >
           {/* ── Back ── */}
-          <Pressable style={[styles.backBtn, ds.backBtn]} onPress={() => router.back()}>
+          <Pressable style={[styles.backBtn, ds.backBtn]} onPress={() => router.navigate("/home")}>
             <MaterialCommunityIcons
               name="arrow-left"
               size={22}

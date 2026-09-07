@@ -126,7 +126,7 @@ export default function NewBookingScreen() {
             <AppText variant="body" style={[styles.stateText, ds.stateText]}>
               {route.origin} → {route.destination}{"\n"}Your driver will confirm shortly.
             </AppText>
-            <PrimaryButton title="Back to dashboard" onPress={() => router.replace("/passenger-dashboard")} style={styles.stateButton} />
+            <PrimaryButton title="Back to dashboard" onPress={() => router.replace("/home")} style={styles.stateButton} />
           </View>
         </AppBackground>
       </AuthGate>
