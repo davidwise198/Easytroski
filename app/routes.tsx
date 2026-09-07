@@ -31,6 +31,7 @@ export default function RoutesScreen() {
     stateText: { color: colors.textSecondary },
     searchInput: { color: colors.text },
     searchBar: { backgroundColor: colors.veryLightBlue, borderColor: colors.blueWash },
+    suggestBox: { backgroundColor: colors.surface, borderColor: colors.glassBorder },
     headerIcon: { backgroundColor: colors.blueWash },
     eyebrow: { color: colors.primary },
   }), [colors]);
@@ -40,6 +41,7 @@ export default function RoutesScreen() {
   const [error, setError] = useState<string | null>(null);
   const [expandedRouteId, setExpandedRouteId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
   const [seatData, setSeatData] = useState<Record<string, { totalSeats: number; totalCapacity: number; tripCount: number }>>({});
 
   const loadRoutes = useCallback(async (isRefresh = false) => {
@@ -81,17 +83,83 @@ export default function RoutesScreen() {
     setExpandedRouteId(expandedRouteId === routeId ? null : routeId);
   };
 
-  // Live search filtering
-  const filteredRoutes = useMemo(() => {
-    if (!searchQuery.trim()) return routes;
-    const q = searchQuery.toLowerCase().trim();
-    return routes.filter(
-      (route) =>
-        route.origin.toLowerCase().includes(q) ||
-        route.destination.toLowerCase().includes(q) ||
-        route.stops.some((stop) => stop.toLowerCase().includes(q))
+  // ── Search engine ──────────────────────────────────────────────────────
+  // Normalize a search field: lowercase, strip punctuation, collapse spaces.
+  const normalizeField = (s: string) =>
+    s.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
+
+  // A field matches when EVERY query word appears inside it.
+  const fieldMatchesQuery = (field: string, query: string) => {
+    if (!query) return false;
+    const normalized = normalizeField(field);
+    return query.split(" ").every((word) => normalized.includes(word));
+  };
+
+  type SearchResult = {
+    route: Route;
+    direct: boolean;            // matched origin or destination
+    matchedStop: string | null; // first matching stop (when not a direct match)
+    matchScore: number;         // 0 = direct, 1 = stop match (for ranking)
+  };
+
+  const searchResults = useMemo<SearchResult[]>(() => {
+    const q = normalizeField(searchQuery);
+    if (!q) {
+      return routes.map((route) => ({
+        route,
+        direct: true,
+        matchedStop: null,
+        matchScore: 0,
+      }));
+    }
+
+    const results: SearchResult[] = [];
+    for (const route of routes) {
+      if (
+        fieldMatchesQuery(route.origin, q) ||
+        fieldMatchesQuery(route.destination, q)
+      ) {
+        results.push({ route, direct: true, matchedStop: null, matchScore: 0 });
+      } else {
+        const matchedStop =
+          route.stops.find((stop) => fieldMatchesQuery(stop, q)) ?? null;
+        if (matchedStop) {
+          results.push({ route, direct: false, matchedStop, matchScore: 1 });
+        }
+      }
+    }
+    // Direct (origin/destination) matches first, then stop matches, then alphabetical.
+    results.sort(
+      (a, b) => a.matchScore - b.matchScore || a.route.origin.localeCompare(b.route.origin)
     );
+    return results;
   }, [routes, searchQuery]);
+
+  const filteredRoutes = useMemo(() => searchResults.map((r) => r.route), [searchResults]);
+
+  const resultByRoute = useMemo(
+    () => new Map(searchResults.map((r) => [r.route.id, r])),
+    [searchResults]
+  );
+
+  // Live stop suggestions: every matching stop, with the route it belongs to.
+  const suggestions = useMemo(() => {
+    const q = normalizeField(searchQuery);
+    if (!q) return [];
+    const out: { label: string; sub: string; routeId: string }[] = [];
+    for (const res of searchResults) {
+      if (!res.direct && res.matchedStop) {
+        out.push({
+          label: res.matchedStop,
+          sub: `${res.route.origin} → ${res.route.destination}`,
+          routeId: res.route.id,
+        });
+      }
+    }
+    return out.slice(0, 6);
+  }, [searchResults, searchQuery]);
+
+  const activeQuery = normalizeField(searchQuery);
 
   return (
     <AuthGate>
@@ -141,25 +209,57 @@ export default function RoutesScreen() {
             <MaterialCommunityIcons name="magnify" size={20} color={COLORS.textSecondary} />
             <TextInput
               style={[styles.searchInput, ds.searchInput]}
-              placeholder="Search routes..."
+              placeholder="Search routes, stops, areas..."
               placeholderTextColor={COLORS.textSecondary}
               value={searchQuery}
-              onChangeText={setSearchQuery}
+              onChangeText={(t) => {
+                setSearchQuery(t);
+                setSuggestionsOpen(true);
+              }}
+              onFocus={() => setSuggestionsOpen(true)}
               autoCorrect={false}
             />
             {searchQuery.length > 0 && (
-              <Pressable onPress={() => setSearchQuery("")}>
+              <Pressable
+                onPress={() => {
+                  setSearchQuery("");
+                  setSuggestionsOpen(false);
+                }}
+              >
                 <MaterialCommunityIcons name="close-circle" size={18} color={COLORS.textSecondary} />
               </Pressable>
             )}
           </View>
+
+          {/* ─── Live stop suggestions ─── */}
+          {suggestionsOpen && activeQuery && suggestions.length > 0 && (
+            <View style={[styles.suggestBox, ds.suggestBox]}>
+              {suggestions.map((s) => (
+                <Pressable
+                  key={`${s.routeId}-${s.label}`}
+                  style={({ pressed }) => [styles.suggestRow, pressed && styles.suggestRowPressed]}
+                  onPress={() => {
+                    setExpandedRouteId(s.routeId);
+                    setSuggestionsOpen(false);
+                  }}
+                >
+                  <MaterialCommunityIcons name="map-marker" size={16} color={colors.primary} />
+                  <View style={styles.suggestCopy}>
+                    <AppText variant="caption" style={styles.suggestLabel}>{s.label}</AppText>
+                    <AppText variant="caption" style={styles.suggestSub}>{s.sub}</AppText>
+                  </View>
+                  <MaterialCommunityIcons name="chevron-right" size={18} color={colors.textSecondary} />
+                </Pressable>
+              ))}
+            </View>
+          )}
 
           {filteredRoutes.length === 0 ? (
             <View style={styles.stateContainer}>
               <MaterialCommunityIcons name="magnify-close" size={38} color={COLORS.textSecondary} />
               <AppText variant="heading" style={[styles.stateTitle, ds.stateTitle]}>No routes found</AppText>
               <AppText variant="body" style={[styles.stateText, ds.stateText]}>
-                Try a different search term.
+                No routes serve "{searchQuery.trim()}" yet. Try a different area or search term.
               </AppText>
             </View>
           ) : (
@@ -189,6 +289,15 @@ export default function RoutesScreen() {
                         <AppText variant="caption" style={styles.stopsHint}>
                           {route.stops.length} {route.stops.length === 1 ? "stop" : "stops"}
                         </AppText>
+                        {activeQuery &&
+                          resultByRoute.get(route.id) &&
+                          !resultByRoute.get(route.id)!.direct && (
+                            <View style={styles.viaChip}>
+                              <AppText variant="caption" style={styles.viaChipText}>
+                                via {resultByRoute.get(route.id)!.matchedStop}
+                              </AppText>
+                            </View>
+                          )}
                         {seatData[route.id] &&
                           (seatData[route.id].tripCount > 0 ? (
                             <AppText variant="caption" style={styles.seatsHint}>
@@ -232,6 +341,7 @@ export default function RoutesScreen() {
                               style={[
                                 styles.stopName,
                                 (index === 0 || index === allStops.length - 1) && styles.stopNameEndpoint,
+                                activeQuery && fieldMatchesQuery(stop, activeQuery) && styles.stopNameMatched,
                               ]}
                             >
                               {stop}
@@ -318,6 +428,38 @@ const styles = StyleSheet.create({
     color: COLORS.navy,
     paddingVertical: SPACING.xs,
   },
+
+  /* ── Search suggestions ── */
+  suggestBox: {
+    borderRadius: 16,
+    borderWidth: 1,
+    marginTop: -SPACING.sm,
+    marginBottom: SPACING.lg,
+    overflow: "hidden",
+  },
+  suggestRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm + 2,
+  },
+  suggestRowPressed: {
+    opacity: 0.7,
+  },
+  suggestCopy: {
+    flex: 1,
+  },
+  suggestLabel: {
+    color: COLORS.primary,
+    fontWeight: "700",
+    fontSize: 14,
+  },
+  suggestSub: {
+    color: COLORS.textSecondary,
+    fontSize: 12,
+    marginTop: 1,
+  },
   routeList: {
     gap: SPACING.md,
   },
@@ -382,6 +524,23 @@ const styles = StyleSheet.create({
   seatsHint: {
     color: "#F2A93B",
     fontWeight: "600",
+  },
+  viaChip: {
+    backgroundColor: "rgba(242,169,59,0.14)",
+    borderColor: "rgba(242,169,59,0.4)",
+    borderWidth: 1,
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  viaChipText: {
+    color: "#F2A93B",
+    fontWeight: "700",
+    fontSize: 11,
+  },
+  stopNameMatched: {
+    color: "#F2A93B",
+    fontWeight: "700",
   },
 
   /* ── Expanded detail ── */
