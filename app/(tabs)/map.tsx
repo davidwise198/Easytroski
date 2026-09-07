@@ -1020,7 +1020,7 @@ const styles = StyleSheet.create({
   // Bottom sheet
   bottomSheet: {
     position: "absolute",
-    bottom: 0,
+    bottom: 84,
     left: 0,
     right: 0,
     backgroundColor: COLORS.white,

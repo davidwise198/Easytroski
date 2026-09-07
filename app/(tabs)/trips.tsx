@@ -441,7 +441,7 @@ const styles = StyleSheet.create({
   scroll: {
     paddingHorizontal: SPACING.lg,
     paddingTop: 56,
-    paddingBottom: SPACING.xxl + 20,
+    paddingBottom: 170,
   },
 
   // Back

@@ -335,7 +335,7 @@ const styles = StyleSheet.create({
   scroll: {
     paddingHorizontal: SPACING.lg,
     paddingTop: 60,
-    paddingBottom: SPACING.xxl,
+    paddingBottom: 160,
   },
 
   /* ── Header ── */

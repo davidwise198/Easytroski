@@ -628,7 +628,7 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: SPACING.lg,
     paddingTop: SPACING.xl,
-    paddingBottom: SPACING.xxl + 40,
+    paddingBottom: 180,
   },
 
   /* ── Header ── */
