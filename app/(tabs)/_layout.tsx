@@ -1,16 +1,17 @@
-import React, { useEffect } from "react";
-import { StyleSheet, View } from "react-native";
+import React, { useEffect, useState, useCallback } from "react";
+import { StyleSheet, View, Text } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { router, Tabs } from "expo-router";
+import { router, Tabs, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "../../src/contexts/AuthContext";
 import { useThemeColors } from "../../src/contexts/ThemeContext";
+import { getPassengerBookings } from "../../src/services/transport";
+import { COLORS } from "../../src/theme";
+import { auth } from "../../src/services/firebase";
 
 type IconName = keyof typeof MaterialCommunityIcons.glyphMap;
 
-// Modern floating-pill tab bar: the active icon sits inside a filled
-// capsule, the bar itself floats as a rounded pill above the bottom edge.
 function pillIcon(name: IconName, activeColor: string) {
   return ({ focused, color }: { focused: boolean; color: string }) => (
     <View style={[styles.capsule, focused && { backgroundColor: activeColor }]}>
@@ -23,10 +24,28 @@ function pillIcon(name: IconName, activeColor: string) {
   );
 }
 
+// Badge component for pending/active booking count
+function BookingBadge({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <View style={styles.badgeOuter}>
+      <View style={[styles.badgeInner, { backgroundColor: COLORS.danger }]}>
+        <MaterialCommunityIcons name="account-clock" size={10} color={COLORS.white} />
+        {count > 9 ? (
+          <Text style={styles.badgeText}>9+</Text>
+        ) : (
+          <Text style={styles.badgeText}>{count}</Text>
+        )}
+      </View>
+    </View>
+  );
+}
+
 export default function PassengerTabsLayout() {
   const { user, userRole, loading } = useAuth();
   const { colors, isDark } = useThemeColors();
   const insets = useSafeAreaInsets();
+  const [pendingBookingCount, setPendingBookingCount] = useState(0);
 
   // Only passengers may use these tabs.
   useEffect(() => {
@@ -39,6 +58,25 @@ export default function PassengerTabsLayout() {
       router.replace("/admin-routes");
     }
   }, [loading, user, userRole]);
+
+  // Refresh booking count when the tab comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      const passengerId = auth.currentUser?.uid;
+      if (!passengerId) {
+        setPendingBookingCount(0);
+        return;
+      }
+      getPassengerBookings(passengerId)
+        .then((bookings) => {
+          const count = bookings.filter(
+            (b) => b.status === "pending" || b.status === "confirmed"
+          ).length;
+          setPendingBookingCount(count);
+        })
+        .catch(() => setPendingBookingCount(0));
+    }, [])
+  );
 
   if (loading || !user || userRole === "driver" || userRole === "admin") {
     return null;
@@ -84,7 +122,21 @@ export default function PassengerTabsLayout() {
       />
       <Tabs.Screen
         name="map"
-        options={{ title: "Map", tabBarIcon: pillIcon("map-outline", colors.primary) }}
+        options={{
+          title: "Map",
+          tabBarIcon: ({ focused, color }) => (
+            <View style={styles.tabIconContainer}>
+              <View style={[styles.tabIconInner, focused && { backgroundColor: colors.primary }]}>
+                <MaterialCommunityIcons
+                  name="map-outline"
+                  size={22}
+                  color={focused ? "#FFFFFF" : color}
+                />
+              </View>
+              <BookingBadge count={pendingBookingCount} />
+            </View>
+          ),
+        }}
       />
       <Tabs.Screen
         name="trips"
@@ -101,5 +153,37 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
+  },
+  tabIconContainer: {
+    position: "relative",
+  },
+  tabIconInner: {
+    width: 44,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  badgeOuter: {
+    position: "absolute",
+    top: -4,
+    right: -4,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  badgeInner: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: COLORS.danger,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 0,
+  },
+  badgeText: {
+    color: COLORS.white,
+    fontSize: 9,
+    fontWeight: "700",
   },
 });

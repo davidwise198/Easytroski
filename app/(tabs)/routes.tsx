@@ -5,18 +5,20 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
+  Text,
   TextInput,
   View,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 
 import AppBackground from "../../src/components/ui/AppBackground";
 import AppText from "../../src/components/ui/AppText";
 import PrimaryButton from "../../src/components/ui/PrimaryButton";
 import AuthGate from "../../src/components/AuthGate";
-import { getActiveRoutes } from "../../src/services/transport";
+import { getActiveRoutes, getPassengerBookings } from "../../src/services/transport";
+import { auth } from "../../src/services/firebase";
 import { getRouteAvailableSeats } from "../../src/services/map";
 import { COLORS, SPACING } from "../../src/theme";
 import { useThemeColors } from "../../src/contexts/ThemeContext";
@@ -43,6 +45,7 @@ export default function RoutesScreen() {
     headerIcon: { backgroundColor: colors.blueWash },
   }), [colors]);
   const [routes, setRoutes] = useState<Route[]>([]);
+  const [pendingBookingCount, setPendingBookingCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -86,7 +89,25 @@ export default function RoutesScreen() {
     void loadRoutes();
   }, [loadRoutes]);
 
+  // Load pending bookings count for the badge
+  useEffect(() => {
+    const passengerId = auth.currentUser?.uid;
+    if (!passengerId) {
+      setPendingBookingCount(0);
+      return;
+    }
+    getPassengerBookings(passengerId)
+      .then((bookings) => {
+        const count = bookings.filter(
+          (b) => b.status === "pending" || b.status === "confirmed"
+        ).length;
+        setPendingBookingCount(count);
+      })
+      .catch(() => setPendingBookingCount(0));
+  }, []);
+
   // Restore the last-selected route once the list loads, so the route the
+  // user chose stays selected when they come back to this page.  // Restore the last-selected route once the list loads, so the route the
   // user chose stays selected when they come back to this page.
   useEffect(() => {
     if (routes.length === 0) return;
@@ -98,6 +119,25 @@ export default function RoutesScreen() {
       })
       .catch(() => {});
   }, [routes]);
+
+  // Update pending booking count when the user views this tab (refresh on focus)
+  useFocusEffect(
+    useCallback(() => {
+      const passengerId = auth.currentUser?.uid;
+      if (!passengerId) {
+        setPendingBookingCount(0);
+        return;
+      }
+      getPassengerBookings(passengerId)
+        .then((bookings) => {
+          const count = bookings.filter(
+            (b) => b.status === "pending" || b.status === "confirmed"
+          ).length;
+          setPendingBookingCount(count);
+        })
+        .catch(() => setPendingBookingCount(0));
+    }, [auth.currentUser?.uid])
+  );
 
   const toggleRoute = (routeId: string) => {
     setExpandedRouteId((prev) => {
@@ -216,6 +256,10 @@ export default function RoutesScreen() {
       AsyncStorage.setItem(RECENTS_KEY, JSON.stringify(next)).catch(() => {});
       return next;
     });
+    // Navigate directly to the map with the search term as a filter
+    if (term && raw.trim()) {
+      router.navigate(`/map?search=${encodeURIComponent(raw.trim())}`);
+    }
   }, []);
 
   const clearRecents = useCallback(() => {
@@ -316,6 +360,8 @@ export default function RoutesScreen() {
                     onPress={() => {
                       setSearchQuery(term);
                       setSuggestionsOpen(true);
+                      // Navigate to map with this recent search as filter
+                      router.navigate(`/map?search=${encodeURIComponent(term)}`);
                     }}
                   >
                     <MaterialCommunityIcons name="history" size={14} color={colors.textSecondary} />

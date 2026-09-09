@@ -23,11 +23,15 @@ import {
   getDriverPickupLocations,
 } from "../../src/services/map";
 import { getActiveRoutes, startTrip, endTrip, confirmBooking, cancelBooking, updateBookingStatus, updateDriverSeats, incrementDriverSeats, updateDriverLocation } from "../../src/services/transport";
+import { playBookingSound } from "../../src/services/sound";
 import { COLORS, SPACING } from "../../src/theme";
 import { useThemeColors } from "../../src/contexts/ThemeContext";
 import { useMemo } from "react";
 import { Route, Trip, TripStatus } from "../../src/types/models";
 import { showToast } from "../../src/utils/toast";
+
+// Rate limiting constants for driver actions
+const DRIVER_ACTION_RATE_LIMIT_MS = 2000;
 
 // Ghana/Omanjor default center
 const DEFAULT_REGION = {
@@ -126,6 +130,9 @@ export default function DriverMapScreen() {
   const [editingSeats, setEditingSeats] = useState(false);
   const [pickupLocations, setPickupLocations] = useState<Array<{ id: string; latitude: number; longitude: number; passengerName: string; seats: number; status: string }>>([]);
   const [selectedPickup, setSelectedPickup] = useState<{ id: string; latitude: number; longitude: number; passengerName: string; seats: number; status: string } | null>(null);
+  const [previousBookingIds, setPreviousBookingIds] = useState<Set<string>>(new Set());
+  const [pendingActionId, setPendingActionId] = useState<string | null>(null);
+  const actionCooldowns = useRef<Map<string, number>>(new Map());
 
   // Real-time location tracking for active trips
   const locationSubscriptionRef =
@@ -160,6 +167,22 @@ export default function DriverMapScreen() {
     }
 
     const unsubscribe = subscribeDriverBookings(user.uid, (updatedBookings) => {
+      // Detect new bookings and play sound
+      const newIds = new Set(updatedBookings.map((b: any) => b.id));
+      const previousIds = previousBookingIds;
+      
+      // Find newly added bookings
+      updatedBookings.forEach((booking: any) => {
+        if (!previousIds.has(booking.id) && booking.status === "pending") {
+          // New booking detected - play sound
+          void playBookingSound("newBooking").catch(() => {});
+          
+          // Show a brief notification banner
+          showToast("success", "New booking!", `${booking.passengerName || "Passenger"} wants to book a seat.`);
+        }
+      });
+      
+      setPreviousBookingIds(newIds);
       setBookings(updatedBookings);
       // Also refresh pickup locations when bookings change
       getDriverPickupLocations(user.uid).then(setPickupLocations).catch(() => {});
@@ -262,7 +285,29 @@ export default function DriverMapScreen() {
 
   const handleConfirmBooking = useCallback(
     async (bookingId: string) => {
+      // Rate limiting: prevent rapid repeated actions
+      const now = Date.now();
+      const lastAction = actionCooldowns.current.get(bookingId);
+      if (lastAction && now - lastAction < DRIVER_ACTION_RATE_LIMIT_MS) {
+        showToast("info", "Please wait", "Please wait before taking another action.");
+        return;
+      }
+      
+      // Prevent action if already processing
+      if (pendingActionId === bookingId) {
+        showToast("info", "Processing", "Please wait for the current action to complete.");
+        return;
+      }
+      
       const booking = bookings.find((b: any) => b.id === bookingId);
+      if (!booking) {
+        showToast("error", "Booking not found", "This booking may have been removed.");
+        return;
+      }
+      
+      setPendingActionId(bookingId);
+      actionCooldowns.current.set(bookingId, now);
+      
       try {
         await confirmBooking(
           bookingId,
@@ -273,17 +318,42 @@ export default function DriverMapScreen() {
           prev.map((b) => (b.id === bookingId ? { ...b, status: "confirmed" } : b))
         );
         showToast("success", "Booking confirmed", "Passenger has been notified.");
+        // Play confirmation sound
+        void playBookingSound("confirmed").catch(() => {});
       } catch (error) {
         console.error("Confirm booking error:", error);
         showToast("error", "Failed to confirm", "Please try again.");
+      } finally {
+        setPendingActionId(null);
       }
     },
-    []
+    [bookings, activeTrip]
   );
 
   const handleRejectBooking = useCallback(
     async (bookingId: string) => {
+      // Rate limiting: prevent rapid repeated actions
+      const now = Date.now();
+      const lastAction = actionCooldowns.current.get(bookingId);
+      if (lastAction && now - lastAction < DRIVER_ACTION_RATE_LIMIT_MS) {
+        showToast("info", "Please wait", "Please wait before taking another action.");
+        return;
+      }
+      
+      if (pendingActionId === bookingId) {
+        showToast("info", "Processing", "Please wait for the current action to complete.");
+        return;
+      }
+      
       const booking = bookings.find((b: any) => b.id === bookingId);
+      if (!booking) {
+        showToast("error", "Booking not found", "This booking may have been removed.");
+        return;
+      }
+      
+      setPendingActionId(bookingId);
+      actionCooldowns.current.set(bookingId, now);
+      
       try {
         await cancelBooking(
           bookingId,
@@ -296,28 +366,52 @@ export default function DriverMapScreen() {
           prev.map((b) => (b.id === bookingId ? { ...b, status: "cancelled" } : b))
         );
         showToast("info", "Booking rejected", "Passenger has been notified.");
+        // Play rejection sound
+        void playBookingSound("declined").catch(() => {});
       } catch (error) {
         console.error("Reject booking error:", error);
         showToast("error", "Failed to reject", "Please try again.");
+      } finally {
+        setPendingActionId(null);
       }
     },
-    [user?.uid]
+    [bookings, activeTrip, user?.uid]
   );
 
   const handleCompleteBooking = useCallback(
     async (bookingId: string) => {
+      // Rate limiting: prevent rapid repeated actions
+      const now = Date.now();
+      const lastAction = actionCooldowns.current.get(bookingId);
+      if (lastAction && now - lastAction < DRIVER_ACTION_RATE_LIMIT_MS) {
+        showToast("info", "Please wait", "Please wait before taking another action.");
+        return;
+      }
+      
+      if (pendingActionId === bookingId) {
+        showToast("info", "Processing", "Please wait for the current action to complete.");
+        return;
+      }
+      
+      setPendingActionId(bookingId);
+      actionCooldowns.current.set(bookingId, now);
+      
       try {
         await updateBookingStatus(bookingId, "completed");
         setBookings((prev) =>
           prev.map((b) => (b.id === bookingId ? { ...b, status: "completed" } : b))
         );
         showToast("success", "Passenger dropped off", "Booking marked as completed.");
+        // Play completion sound
+        void playBookingSound("tripEnded").catch(() => {});
       } catch (error) {
         console.error("Complete booking error:", error);
         showToast("error", "Failed", "Please try again.");
+      } finally {
+        setPendingActionId(null);
       }
     },
-    []
+    [bookings]
   );
 
   const handleUpdateSeats = useCallback(
@@ -583,26 +677,50 @@ export default function DriverMapScreen() {
                       {booking.status === "pending" && (
                         <View style={styles.bookingActions}>
                           <Pressable
-                            style={styles.confirmButton}
+                            style={[
+                              styles.confirmButton,
+                              pendingActionId === booking.id && styles.actionDisabled,
+                            ]}
                             onPress={() => void handleConfirmBooking(booking.id)}
+                            disabled={pendingActionId === booking.id}
                           >
-                            <MaterialCommunityIcons name="check" size={18} color={COLORS.white} />
+                            <MaterialCommunityIcons
+                              name={pendingActionId === booking.id ? "clock" : "check"}
+                              size={18}
+                              color={COLORS.white}
+                            />
                           </Pressable>
                           <Pressable
-                            style={styles.rejectButton}
+                            style={[
+                              styles.rejectButton,
+                              pendingActionId === booking.id && styles.actionDisabled,
+                            ]}
                             onPress={() => void handleRejectBooking(booking.id)}
+                            disabled={pendingActionId === booking.id}
                           >
-                            <MaterialCommunityIcons name="close" size={18} color={COLORS.white} />
+                            <MaterialCommunityIcons
+                              name={pendingActionId === booking.id ? "clock" : "close"}
+                              size={18}
+                              color={COLORS.white}
+                            />
                           </Pressable>
                         </View>
                       )}
                       {booking.status === "confirmed" && (
                         <View style={styles.bookingActions}>
                           <Pressable
-                            style={styles.dropoffButton}
+                            style={[
+                              styles.dropoffButton,
+                              pendingActionId === booking.id && styles.actionDisabled,
+                            ]}
                             onPress={() => void handleCompleteBooking(booking.id)}
+                            disabled={pendingActionId === booking.id}
                           >
-                            <MaterialCommunityIcons name="account-check" size={18} color={COLORS.white} />
+                            <MaterialCommunityIcons
+                              name={pendingActionId === booking.id ? "clock" : "account-check"}
+                              size={18}
+                              color={COLORS.white}
+                            />
                           </Pressable>
                         </View>
                       )}
@@ -1061,6 +1179,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: COLORS.primary,
+  },
+  actionDisabled: {
+    opacity: 0.6,
   },
 
   // Pickup detail sheet

@@ -1,9 +1,15 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
+import { useFocusEffect } from "expo-router";
+
+import { playBookingSound } from "../../src/services/sound";
+import { getPassengerBookings } from "../../src/services/transport";
+import { getActiveTripMarkers, subscribeActiveTripMarkers, subscribeDriverLocation } from "../../src/services/map";
 import {
   ActivityIndicator,
   Pressable,
   ScrollView,
   StyleSheet,
+  TextInput,
   View,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
@@ -13,11 +19,10 @@ import { router, useLocalSearchParams } from "expo-router";
 import AuthGate from "../../src/components/AuthGate";
 import AppText from "../../src/components/ui/AppText";
 import PrimaryButton from "../../src/components/ui/PrimaryButton";
+import StarRating from "../../src/components/ui/StarRating";
 import { TripMarker } from "../../src/components/map/TripMarker";
 import { useLocation } from "../../src/contexts/LocationContext";
 import { useAuth } from "../../src/contexts/AuthContext";
-import { getActiveTripMarkers, subscribeActiveTripMarkers, subscribeDriverLocation } from "../../src/services/map";
-import StarRating from "../../src/components/ui/StarRating";
 import { createBooking, cancelBooking, rateDriver, getActiveRoutes } from "../../src/services/transport";
 import { auth, db } from "../../src/services/firebase";
 import { doc, onSnapshot, updateDoc } from "firebase/firestore";
@@ -38,6 +43,8 @@ const DEFAULT_REGION = {
   latitudeDelta: 0.15,
   longitudeDelta: 0.15,
 };
+
+const BOOKING_RATE_LIMIT_MS = 2000; // Minimum gap between booking attempts
 
 function tripStatusLabel(status: TripStatus): string {
   switch (status) {
@@ -102,8 +109,16 @@ export default function PassengerMapScreen() {
     busStopText: { color: colors.primary },
     sheetStatusText: { color: colors.white },
     chipTextSelected: { color: colors.white },
+    mapSearchContainer: { backgroundColor: COLORS.white },
+    mapSearchInputWrap: { backgroundColor: COLORS.white },
+    mapSearchInput: { color: colors.text },
+    mapSearchClearBtn: { backgroundColor: colors.veryLightBlue },
+    mapSearchClearAllBtn: { backgroundColor: colors.primary },
+    mapSearchClearAllText: { color: colors.white },
+    noResultsBanner: { backgroundColor: COLORS.white },
+    noResultsText: { color: colors.navy },
   }), [colors, isDark]);
-  const params = useLocalSearchParams<{ routeId?: string }>();
+  const params = useLocalSearchParams<{ routeId?: string; search?: string }>();
   const {
     status: permissionStatus,
     location,
@@ -119,11 +134,14 @@ export default function PassengerMapScreen() {
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(
     params.routeId ?? null
   );
+  const [mapSearchQuery, setMapSearchQuery] = useState(params.search ?? "");
   const [markers, setMarkers] = useState<ActiveTripMarker[]>([]);
   const [loadingTrips, setLoadingTrips] = useState(true);
   const [bookingTripId, setBookingTripId] = useState<string | null>(null);
   const [lastBookingId, setLastBookingId] = useState<string | null>(null);
   const [lastBookingStatus, setLastBookingStatus] = useState<string | null>(null);
+  const [pendingBookingCount, setPendingBookingCount] = useState(0);
+  const [bookingSoundPlayedForId, setBookingSoundPlayedForId] = useState<string | null>(null);
   const [cancellingBooking, setCancellingBooking] = useState(false);
   const [editingSeats, setEditingSeats] = useState(false);
   const [bookingSeats, setBookingSeats] = useState(1);
@@ -135,6 +153,8 @@ export default function PassengerMapScreen() {
   const [tripToRate, setTripToRate] = useState<{ tripId: string; driverId: string } | null>(null);
   const [driverApproaching, setDriverApproaching] = useState(false);
   const [remainingSeats, setRemainingSeats] = useState<number | null>(null);
+  const [lastBookingAttemptAt, setLastBookingAttemptAt] = useState<number | null>(null);
+  const isProcessingBooking = useRef(false);
 
   // Selected trip for bottom sheet
   const [selectedMarker, setSelectedMarker] =
@@ -180,6 +200,43 @@ export default function PassengerMapScreen() {
     }
   }, [selectedRouteId]);
 
+  // Load pending/active booking count for the badge on tab focus
+  useFocusEffect(
+    useCallback(() => {
+      if (!auth.currentUser?.uid) {
+        setPendingBookingCount(0);
+        return;
+      }
+      getPassengerBookings(auth.currentUser.uid)
+        .then((bookings) => {
+          const count = bookings.filter(
+            (b) => b.status === "pending" || b.status === "confirmed"
+          ).length;
+          setPendingBookingCount(count);
+        })
+        .catch(() => setPendingBookingCount(0));
+    }, [])
+  );
+
+  // Refresh badge count when booking status changes
+  useEffect(() => {
+    if (!lastBookingStatus || !lastBookingId) return;
+    // When status becomes terminal, refresh the count from server
+    if (
+      lastBookingStatus === "completed" ||
+      lastBookingStatus === "cancelled"
+    ) {
+      getPassengerBookings(auth.currentUser?.uid || "")
+        .then((bookings) => {
+          const count = bookings.filter(
+            (b) => b.status === "pending" || b.status === "confirmed"
+          ).length;
+          setPendingBookingCount(count);
+        })
+        .catch(() => {});
+    }
+  }, [lastBookingStatus]);
+
   // Re-center map when user location becomes available
   useEffect(() => {
     if (location && mapRef.current) {
@@ -194,6 +251,12 @@ export default function PassengerMapScreen() {
       );
     }
   }, [location]);
+
+  // Clear both search and route filter
+  const clearAllFilters = useCallback(() => {
+    setMapSearchQuery("");
+    setSelectedRouteId(null);
+  }, []);
 
   const handleMarkerPress = useCallback((marker: ActiveTripMarker) => {
     setSelectedMarker(marker);
@@ -222,11 +285,24 @@ export default function PassengerMapScreen() {
           setLastBookingStatus(data.status);
           if (data.status === "confirmed") {
             showToast("success", "Booking confirmed", "Your driver has confirmed your seat!");
+            // Play sound only once per booking to avoid repeats on every snapshot
+            if (lastBookingId && data.id === lastBookingId && !bookingSoundPlayedForId) {
+              void playBookingSound("confirmed").catch(() => {});
+              setBookingSoundPlayedForId(lastBookingId);
+            }
           } else if (data.status === "cancelled") {
             showToast("info", "Booking declined", "The driver could not take this booking.");
+            if (lastBookingId && data.id === lastBookingId && !bookingSoundPlayedForId) {
+              void playBookingSound("declined").catch(() => {});
+              setBookingSoundPlayedForId(lastBookingId);
+            }
           } else if (data.status === "completed") {
             setTripToRate({ tripId: data.tripId || "", driverId: data.driverId || "" });
             setShowRating(true);
+            if (lastBookingId && data.id === lastBookingId && !bookingSoundPlayedForId) {
+              void playBookingSound("tripEnded").catch(() => {});
+              setBookingSoundPlayedForId(lastBookingId);
+            }
           }
         }
       }
@@ -242,6 +318,20 @@ export default function PassengerMapScreen() {
         showToast("error", "Not signed in", "Please sign in to book a trip.");
         return;
       }
+
+          // Client-side rate limiting: prevent double-tap bookings
+      const now = Date.now();
+      if (now - (lastBookingAttemptAt ?? 0) < BOOKING_RATE_LIMIT_MS) {
+        showToast("info", "Please wait", "Please wait a moment before booking again.");
+        return;
+      }
+      // Also prevent booking while a previous booking is still being processed
+      if (isProcessingBooking.current) {
+        showToast("info", "Processing", "Your previous booking is still being processed.");
+        return;
+      }
+      setLastBookingAttemptAt(now);
+      isProcessingBooking.current = true;
 
       setBookingTripId(marker.trip.id);
       try {
@@ -269,6 +359,8 @@ export default function PassengerMapScreen() {
           "Booking sent",
           `Your driver will confirm ${marker.trip.origin} → ${marker.trip.destination} shortly.`
         );
+        // Play a short sound to confirm the booking was sent
+        void playBookingSound("newBooking").catch(() => {});
         setSelectedMarker(null);
 
         // Refresh markers so seat count updates on the map
@@ -283,6 +375,7 @@ export default function PassengerMapScreen() {
         );
       } finally {
         setBookingTripId(null);
+        isProcessingBooking.current = false;
       }
     },
     [selectedRouteId]
@@ -323,11 +416,43 @@ export default function PassengerMapScreen() {
       return;
     }
     // Find the trip marker that matches this driver
-    const marker = markers.find(m => m.trip.driverId === trackedDriverId);
+    const marker = filteredMarkers.find((m) => m.trip.driverId === trackedDriverId);
     if (marker) {
       setRemainingSeats(marker.availableSeats);
     }
   }, [trackedDriverId, lastBookingStatus, markers]);
+
+  // Filter markers based on route selection + map search query
+  const filteredMarkers = useMemo(() => {
+    // If no filters, return all markers
+    if (!mapSearchQuery.trim() && !selectedRouteId) {
+      return markers;
+    }
+
+    const q = mapSearchQuery.trim().toLowerCase();
+    return markers.filter((marker) => {
+      // If a specific route is selected, only show markers for that route
+      if (selectedRouteId) {
+        const tripRouteId = marker.trip.routeId;
+        if (tripRouteId !== selectedRouteId) return false;
+      }
+
+      // If there's a search query, filter by origin/destination
+      if (q) {
+        const trip = marker.trip;
+        const origin = (trip.origin || "").toLowerCase();
+        const destination = (trip.destination || "").toLowerCase();
+
+        // Check if query matches origin or destination
+        const matchesOrigin = origin.includes(q);
+        const matchesDestination = destination.includes(q);
+
+        return matchesOrigin || matchesDestination;
+      }
+
+      return true;
+    });
+  }, [markers, selectedRouteId, mapSearchQuery]);
 
   // Check if driver is approaching (within 500m of pickup)
   useEffect(() => {
@@ -362,6 +487,18 @@ export default function PassengerMapScreen() {
     }
   }, [tripToRate, user?.uid, ratingValue]);
 
+  // Memoized set of marker IDs that should be visible (for opacity filtering)
+  const visibleMarkerIds = useMemo(() => {
+    const ids = new Set<string>();
+    filteredMarkers.forEach((m) => ids.add(m.trip.id));
+    return ids;
+  }, [filteredMarkers]);
+
+  const markerInclusive = useCallback(
+    (marker: ActiveTripMarker) => visibleMarkerIds.has(marker.trip.id),
+    [visibleMarkerIds]
+  );
+
   const userRegion = location
     ? {
         latitude: location.coords.latitude,
@@ -384,11 +521,12 @@ export default function PassengerMapScreen() {
           initialRegion={userRegion}
         >
           {/* Trip markers */}
-          {markers.map((marker) => (
+          {filteredMarkers.map((marker) => (
             <TripMarker
               key={marker.trip.id}
               marker={marker}
               onPress={() => handleMarkerPress(marker)}
+              opacity={markerInclusive(marker) ? 1 : 0.3}
             />
           ))}
 
@@ -411,9 +549,14 @@ export default function PassengerMapScreen() {
             <MaterialCommunityIcons name="arrow-left" size={22} color={COLORS.primary} />
           </Pressable>
 
-          <View style={styles.topBarTitle}>
-            <AppText variant="caption" style={[styles.topBarEyebrow, ds.topBarEyebrow]}>EASYTROLSKI MAP</AppText>
-            <AppText variant="heading" style={[styles.topBarText, ds.topBarText]}>Find a ride</AppText>
+          <View style={styles.topBarTitle}>              <AppText variant="caption" style={[styles.topBarEyebrow, ds.topBarEyebrow]}>EASYTROLSKI MAP</AppText>
+            <AppText variant="heading" style={[styles.topBarText, ds.topBarText]}>
+              {selectedRouteId
+                ? `${routes.find((r) => r.id === selectedRouteId)?.origin || "Route"} → ${routes.find((r) => r.id === selectedRouteId)?.destination || "Dest"}`
+                : mapSearchQuery
+                  ? `Showing: ${mapSearchQuery.trim()}`
+                  : "Find a ride"}
+            </AppText>
           </View>
 
           <Pressable style={[styles.iconButton, ds.iconButton]} onPress={() => requestPermission()}>
@@ -421,7 +564,79 @@ export default function PassengerMapScreen() {
           </Pressable>
         </View>
 
-        {/* ---- Location permission banner ---- */}
+        {/* ---- Map search input ---- */}
+        <View style={[styles.mapSearchContainer, ds.mapSearchContainer]}>
+          <View style={[styles.mapSearchInputWrap, ds.mapSearchInputWrap]}>
+            <MaterialCommunityIcons
+              name="magnify"
+              size={18}
+              color={COLORS.textSecondary}
+            />
+            <TextInput
+              style={[styles.mapSearchInput, ds.mapSearchInput]}
+              placeholder="Search stops, routes..."
+              placeholderTextColor={COLORS.textSecondary}
+              value={mapSearchQuery}
+              onChangeText={(text) => {
+                setMapSearchQuery(text);
+                // When typing, clear route selection to show all matching markers
+                if (text.length > 0 && selectedRouteId) {
+                  setSelectedRouteId(null);
+                }
+              }}
+              onSubmitEditing={() => {
+                // On submit, narrow to only markers matching the query
+                if (mapSearchQuery.trim().length > 0) {
+                  setMarkers((prev) => prev);
+                }
+              }}
+              returnKeyType="search"
+              autoCapitalize="none"
+              autoCorrect={false}
+              clearButtonMode="never"
+            />
+            {mapSearchQuery.length > 0 && (
+              <Pressable
+                onPress={() => {
+                  setMapSearchQuery("");
+                }}
+                style={styles.mapSearchClearBtn}
+              >
+                <MaterialCommunityIcons
+                  name="close-circle"
+                  size={16}
+                  color={COLORS.textSecondary}
+                />
+              </Pressable>
+            )}
+          </View>
+          {mapSearchQuery.length > 0 && (
+            <Pressable
+              onPress={clearAllFilters}
+              style={styles.mapSearchClearAllBtn}
+            >
+              <AppText variant="caption" style={styles.mapSearchClearAllText}>
+                Clear search & route filter
+              </AppText>
+            </Pressable>
+          )}
+        </View>
+
+        {/* Show empty state when search has no results */}
+        {!loadingTrips && markers.length > 0 && filteredMarkers.length === 0 && (
+          <View style={[styles.noResultsBanner, ds.noResultsBanner]}>
+            <MaterialCommunityIcons
+              name="magnify-close"
+              size={16}
+              color={COLORS.warning}
+            />
+            <AppText variant="caption" style={[styles.noResultsText, ds.noResultsText]}>
+              No drivers found for "{mapSearchQuery.trim()}"
+            </AppText>
+          </View>
+        )}
+
+        {/* ---- Route filter chips ---- */}
         {permissionStatus === "denied" && (
           <Pressable style={[styles.permissionBanner, ds.permissionBanner]} onPress={() => requestPermission()}>
             <MaterialCommunityIcons name="map-marker-alert-outline" size={18} color={COLORS.warning} />
@@ -858,6 +1073,79 @@ const styles = StyleSheet.create({
   },
   chipTextSelected: {
     color: COLORS.white,
+  },
+
+  // Map search
+  mapSearchContainer: {
+    position: "absolute",
+    top: 145,
+    left: 0,
+    right: 0,
+    zIndex: 5,
+  },
+  mapSearchInputWrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.veryLightBlue,
+    shadowColor: COLORS.navy,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  mapSearchInput: {
+    flex: 1,
+    fontSize: 13,
+    color: COLORS.navy,
+    paddingVertical: 0,
+  },
+  mapSearchClearBtn: {
+    padding: 4,
+  },
+  mapSearchClearAllBtn: {
+    position: "absolute",
+    right: SPACING.sm,
+    top: 52,
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: SPACING.sm,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  mapSearchClearAllText: {
+    color: COLORS.white,
+    fontWeight: "600",
+    fontSize: 11,
+  },
+  noResultsBanner: {
+    position: "absolute",
+    top: 200,
+    left: SPACING.md,
+    right: SPACING.md,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+    padding: SPACING.md,
+    backgroundColor: COLORS.white,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.warning + "40",
+    shadowColor: COLORS.navy,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
+    zIndex: 5,
+  },
+  noResultsText: {
+    color: COLORS.navy,
+    fontSize: 12,
+    fontWeight: "600",
   },
 
   // Driver approaching

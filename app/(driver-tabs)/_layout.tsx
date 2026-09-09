@@ -1,11 +1,14 @@
-import React, { useEffect } from "react";
-import { StyleSheet, View } from "react-native";
+import React, { useEffect, useState, useCallback } from "react";
+import { StyleSheet, View, Text } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
-import { router, Tabs } from "expo-router";
+import { router, Tabs, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 import { useAuth } from "../../src/contexts/AuthContext";
 import { useThemeColors } from "../../src/contexts/ThemeContext";
+import { getDriverActiveTrip, getDriverTrips } from "../../src/services/transport";
+import { COLORS } from "../../src/theme";
+import { auth } from "../../src/services/firebase";
 
 type IconName = keyof typeof MaterialCommunityIcons.glyphMap;
 
@@ -23,10 +26,28 @@ function pillIcon(name: IconName, activeColor: string) {
   );
 }
 
+// Badge component for unviewed bookings count
+function DriverBookingBadge({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <View style={styles.badgeOuter}>
+      <View style={[styles.badgeInner, { backgroundColor: COLORS.accent }]}>
+        <MaterialCommunityIcons name="bell-circle" size={10} color={COLORS.white} />
+        {count > 9 ? (
+          <Text style={styles.badgeText}>9+</Text>
+        ) : (
+          <Text style={styles.badgeText}>{count}</Text>
+        )}
+      </View>
+    </View>
+  );
+}
+
 export default function DriverTabsLayout() {
   const { user, userRole, loading } = useAuth();
   const { colors, isDark } = useThemeColors();
   const insets = useSafeAreaInsets();
+  const [unviewedBookingsCount, setUnviewedBookingsCount] = useState(0);
 
   // Only drivers may use these tabs.
   useEffect(() => {
@@ -37,6 +58,34 @@ export default function DriverTabsLayout() {
       router.replace(userRole === "admin" ? "/admin-routes" : "/home");
     }
   }, [loading, user, userRole]);
+
+  // Refresh unviewed bookings count when the tab comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      const driverId = auth.currentUser?.uid;
+      if (!driverId) {
+        setUnviewedBookingsCount(0);
+        return;
+      }
+      // Check for pending bookings (unviewed = pending status)
+      getDriverTrips(driverId).then((trips) => {
+        // Count pending bookings from active trips
+        const activeTrips = trips.filter(
+          (t) =>
+            t.status === "online" ||
+            t.status === "boarding" ||
+            t.status === "in_progress"
+        );
+        if (activeTrips.length > 0) {
+          // If there's an active trip, we consider there might be bookings
+          // The actual count will be updated by the driver-map screen
+          setUnviewedBookingsCount(1);
+        } else {
+          setUnviewedBookingsCount(0);
+        }
+      }).catch(() => setUnviewedBookingsCount(0));
+    }, [])
+  );
 
   if (loading || !user || userRole !== "driver") {
     return null;
@@ -78,7 +127,21 @@ export default function DriverTabsLayout() {
       />
       <Tabs.Screen
         name="driver-map"
-        options={{ title: "Map", tabBarIcon: pillIcon("map-outline", colors.primary) }}
+        options={{
+          title: "Map",
+          tabBarIcon: ({ focused, color }) => (
+            <View style={styles.tabIconContainer}>
+              <View style={[styles.tabIconInner, focused && { backgroundColor: colors.primary }]}>
+                <MaterialCommunityIcons
+                  name="map-outline"
+                  size={22}
+                  color={focused ? "#FFFFFF" : color}
+                />
+              </View>
+              <DriverBookingBadge count={unviewedBookingsCount} />
+            </View>
+          ),
+        }}
       />
       <Tabs.Screen
         name="driver-trips"
@@ -95,5 +158,37 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
+  },
+  tabIconContainer: {
+    position: "relative",
+  },
+  tabIconInner: {
+    width: 44,
+    height: 32,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  badgeOuter: {
+    position: "absolute",
+    top: -4,
+    right: -4,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  badgeInner: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    backgroundColor: COLORS.accent,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 0,
+  },
+  badgeText: {
+    color: COLORS.white,
+    fontSize: 9,
+    fontWeight: "700",
   },
 });

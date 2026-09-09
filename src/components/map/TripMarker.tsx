@@ -60,9 +60,10 @@ function tripStatusColor(status: TripStatus): string {
 type TripMarkerProps = {
   marker: ActiveTripMarker;
   onPress?: () => void;
+  opacity?: number;
 };
 
-export function TripMarker({ marker, onPress }: TripMarkerProps) {
+export function TripMarker({ marker, onPress, opacity = 1 }: TripMarkerProps) {
   const { trip, driverLocation, availableSeats } = marker;
   const statusColor = tripStatusColor(trip.status);
 
@@ -76,7 +77,7 @@ export function TripMarker({ marker, onPress }: TripMarkerProps) {
       tracksViewChanges={true}
     >
       {/* Tappable vehicle icon marker */}
-      <View style={styles.markerWrapper}>
+      <View style={[styles.markerWrapper, { opacity }]}>
         <View style={[styles.markerContainer, { borderColor: statusColor }]}>
           <MaterialCommunityIcons
             name="bus"
@@ -87,8 +88,8 @@ export function TripMarker({ marker, onPress }: TripMarkerProps) {
 
         {/* Seat count badge */}
         {availableSeats > 0 && (
-          <View style={styles.seatBadge}>
-            <AppText variant="caption" style={styles.seatBadgeText}>
+          <View style={[styles.seatBadge, { opacity }]}>
+            <AppText variant="caption" style={[styles.seatBadgeText, { opacity }]}>
               {availableSeats}
             </AppText>
           </View>
