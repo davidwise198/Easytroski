@@ -107,7 +107,7 @@ export async function notifyDriverOfBooking(
 ) {
   await notifyUser(
     driverId,
-    "New booking! 🚌",
+    "New booking!",
     `${passengerName} just booked a seat on ${routeLabel}.`,
     { type: "new_booking" }
   );
@@ -120,7 +120,7 @@ export async function notifyPassengerOfConfirmation(
 ) {
   await notifyUser(
     passengerId,
-    "Booking confirmed ✅",
+    "Booking confirmed",
     `Your seat on ${routeLabel} has been confirmed.`,
     { type: "booking_confirmed" }
   );

@@ -360,7 +360,7 @@ export default function DriverDashboardScreen() {
                   Ready to move?
                 </AppText>
                 <AppText variant="heading" style={[styles.driverName, ds.driverName]}>
-                  {displayName} 👋
+                  {displayName}
                 </AppText>
               </View>
               <View style={styles.headerRight}>

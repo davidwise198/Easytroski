@@ -15,7 +15,7 @@ type AnyProps = Record<string, any>;
 export function MapView({ children, style, ...rest }: AnyProps) {
   return (
     <View style={[styles.container, style]}>
-      <Text style={styles.heading}>🗺️ EasyTroski Map</Text>
+      <Text style={styles.heading}>EasyTroski Map</Text>
       <Text style={styles.body}>
         The interactive map is available on the mobile app.
       </Text>

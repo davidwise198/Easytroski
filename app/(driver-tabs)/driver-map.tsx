@@ -142,12 +142,19 @@ export default function DriverMapScreen() {
   useEffect(() => {
     if (!user?.uid) return;
 
-    const unsubscribe = subscribeDriverActiveTrip(user.uid, (trip) => {
-      setActiveTrip(trip);
-      if (trip?.routeId) {
-        setSelectedRouteId(trip.routeId);
+    const unsubscribe = subscribeDriverActiveTrip(
+      user.uid,
+      (trip) => {
+        setActiveTrip(trip);
+        if (trip?.routeId) {
+          setSelectedRouteId(trip.routeId);
+        }
+      },
+      (error) => {
+        showToast("error", "Connection problem", "Could not load your trip. Check your connection and restart the trip.");
+        console.error("Active trip listener error:", error);
       }
-    });
+    );
 
     return unsubscribe;
   }, [user?.uid]);
@@ -159,11 +166,18 @@ export default function DriverMapScreen() {
       return;
     }
 
-    const unsubscribe = subscribeDriverBookings(user.uid, (updatedBookings) => {
-      setBookings(updatedBookings);
-      // Also refresh pickup locations when bookings change
-      getDriverPickupLocations(user.uid).then(setPickupLocations).catch(() => {});
-    });
+    const unsubscribe = subscribeDriverBookings(
+      user.uid,
+      (updatedBookings) => {
+        setBookings(updatedBookings);
+        // Also refresh pickup locations when bookings change
+        getDriverPickupLocations(user.uid).then(setPickupLocations).catch(() => {});
+      },
+      (error) => {
+        showToast("error", "Connection problem", "New bookings may not appear. Check your connection.");
+        console.error("Bookings listener error:", error);
+      }
+    );
 
     return unsubscribe;
   }, [activeTrip, user?.uid]);

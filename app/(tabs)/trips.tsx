@@ -194,7 +194,6 @@ export default function PassengerAccountScreen() {
   const completedBookings = bookings.filter(
     (b) => b.status === "completed"
   ).length;
-  const totalSeats = bookings.reduce((sum, b) => sum + (b.seats || 1), 0);
 
   const displayName = profile?.name || user?.displayName || "Passenger";
   const photoURL = getPhotoURL(user, profile);
@@ -288,13 +287,6 @@ export default function PassengerAccountScreen() {
               label="Completed"
               delay={200}
               color={COLORS.success}
-            />
-            <StatCard
-              icon="seat-passenger"
-              value={totalSeats}
-              label="Seats"
-              delay={300}
-              color={COLORS.accent}
             />
           </View>
 

@@ -8,7 +8,7 @@ import AppText from "../../src/components/ui/AppText";
 import PrimaryButton from "../../src/components/ui/PrimaryButton";
 import AuthGate from "../../src/components/AuthGate";
 import { auth } from "../../src/services/firebase";
-import { createBooking, getRoute } from "../../src/services/transport";
+import { createBooking, getAvailableTrips, getRoute } from "../../src/services/transport";
 import { COLORS, SPACING } from "../../src/theme";
 import { useThemeColors } from "../../src/contexts/ThemeContext";
 import { useMemo } from "react";
@@ -60,10 +60,25 @@ export default function NewBookingScreen() {
 
     setSubmitting(true);
     try {
-      // Book 1 seat from origin → destination
+      // A booking must target a live trip — the driver dashboard only lists
+      // bookings by driverId, so bookings without a real driver are invisible
+      // to drivers and get auto-cancelled as stale.
+      const availableTrips = await getAvailableTrips(route.id);
+      if (availableTrips.length === 0) {
+        showToast(
+          "error",
+          "No driver available",
+          "No driver is currently running this route. Please try again shortly."
+        );
+        setSubmitting(false);
+        return;
+      }
+
+      // Book 1 seat on the first live trip for this route
+      const trip = availableTrips[0];
       await createBooking({
         passengerId,
-        driverId: "", // Will be assigned by driver
+        driverId: trip.driverId,
         routeId: route.id,
         pickupLocation: {
           latitude: 0,

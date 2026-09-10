@@ -23,6 +23,31 @@ import {
   notifyPassengerTripEnded,
 } from "./notifications";
 
+/**
+ * Normalise a timestamp value (ISO string, Date, number, or Firestore
+ * Timestamp) to epoch milliseconds. Returns null when unparseable so callers
+ * can skip the record instead of misbehaving — NaN date comparisons are
+ * always false, which previously made the expiry cleanup skip valid
+ * Firestore Timestamps and (worse) made "created" parsing fragile.
+ */
+const toMillis = (value: unknown): number | null => {
+  if (value == null) return null;
+  if (value instanceof Date) return value.getTime();
+  if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const t = new Date(value).getTime();
+    return Number.isNaN(t) ? null : t;
+  }
+  if (typeof value === "object" && "toDate" in (value as object)) {
+    try {
+      return (value as { toDate: () => Date }).toDate().getTime();
+    } catch {
+      return null;
+    }
+  }
+  return null;
+};
+
 export const getActiveRoutes = async (): Promise<Route[]> => {
   try {
     const routesSnapshot = await getDocs(
@@ -64,7 +89,7 @@ export const getAvailableTrips = async (routeId: string): Promise<Trip[]> => {
     query(
       collection(db, "trips"),
       where("routeId", "==", routeId),
-      where("status", "in", ["online", "in_progress"]),
+      where("status", "in", ["online", "boarding", "in_progress"]),
       limit(20)
     )
   );
@@ -557,8 +582,23 @@ export const cleanupStaleBookings = async () => {
         const driverDoc = await getDoc(doc(db, "drivers", booking.driverId));
         const driver = driverDoc.exists() ? driverDoc.data() : null;
 
-        // If driver is offline or doesn't exist, the booking is stale
+        // If the driver is offline or missing, the booking may be stale.
+        // BUT a stale `online` flag must not cancel a booking for a trip
+        // that is still active — passengers book against the trip, and the
+        // driver dashboard shows bookings only while a trip is running.
+        // Only cancel when the driver is offline AND has no active trip.
         if (!driver || !driver.online) {
+          const activeTrips = await getDocs(
+            query(
+              collection(db, "trips"),
+              where("driverId", "==", booking.driverId),
+              where("status", "in", ["online", "boarding", "in_progress"]),
+              limit(1)
+            )
+          );
+
+          if (!activeTrips.empty) continue; // trip still live — keep the booking
+
           await updateDoc(doc(db, "bookings", bookingDoc.id), {
             status: "cancelled",
             cancelledAt: new Date().toISOString(),
@@ -701,11 +741,13 @@ export const cleanupExpiredBookings = async () => {
 
     for (const bookingDoc of bookingsSnapshot.docs) {
       const booking = bookingDoc.data();
-      const createdAt = booking.createdAt;
-      if (!createdAt) continue;
 
-      const createdTime = new Date(createdAt).getTime();
-      if (now - createdTime > EXPIRY_MS) {
+      // Skip bookings whose createdAt can't be parsed (Firestore Timestamp
+      // or missing) — cancelling on a bad guess would eat live bookings.
+      const createdAtMs = toMillis(booking.createdAt);
+      if (createdAtMs === null) continue;
+
+      if (now - createdAtMs > EXPIRY_MS) {
         // Auto-decline the booking
         await updateDoc(doc(db, "bookings", bookingDoc.id), {
           status: "cancelled",

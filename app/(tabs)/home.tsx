@@ -228,7 +228,7 @@ export default function HomeScreen() {
                   {greeting},
                 </AppText>
                 <AppText variant="heading" style={[styles.name, ds.name]}>
-                  {displayName} 👋
+                  {displayName}
                 </AppText>
               </View>
 

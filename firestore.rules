@@ -164,7 +164,10 @@ service cloud.firestore {
         && ownerFieldUnchanged("routeId")
         && reasonableSize();
 
-      allow delete: if isAdmin();
+      // Delete: the passenger who booked can remove it from their history;
+      // admins can delete any booking.
+      allow delete: if isAdmin()
+        || resource.data.passengerId == request.auth.uid;
     }
 
     // ─── Driver locations (privacy-sensitive) ──────────────────────────

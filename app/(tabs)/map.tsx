@@ -157,10 +157,18 @@ export default function PassengerMapScreen() {
 
     if (selectedRouteId) {
       // Subscribe to real-time updates for a specific route
-      const unsubscribe = subscribeActiveTripMarkers(selectedRouteId, (updatedMarkers) => {
-        setMarkers(updatedMarkers);
-        setLoadingTrips(false);
-      });
+      const unsubscribe = subscribeActiveTripMarkers(
+        selectedRouteId,
+        (updatedMarkers) => {
+          setMarkers(updatedMarkers);
+          setLoadingTrips(false);
+        },
+        (error) => {
+          console.error("[passenger map] marker listener failed:", error);
+          showToast("error", "Connection problem", "Live driver positions may be unavailable.");
+          setLoadingTrips(false);
+        }
+      );
       return unsubscribe;
     } else {
       // For "all routes", do initial fetch then subscribe to trip changes

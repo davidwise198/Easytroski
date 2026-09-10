@@ -141,7 +141,8 @@ export async function getActiveTripMarkers(
  */
 export function subscribeActiveTripMarkers(
   routeId: string,
-  onUpdate: (markers: ActiveTripMarker[]) => void
+  onUpdate: (markers: ActiveTripMarker[]) => void,
+  onError?: (error: Error) => void
 ): () => void {
   const statuses = ["online", "boarding", "in_progress"];
   const tripQuery = query(
@@ -151,7 +152,9 @@ export function subscribeActiveTripMarkers(
     limit(20)
   );
 
-  return onSnapshot(tripQuery, async (snapshot) => {
+  return onSnapshot(
+    tripQuery,
+    async (snapshot) => {
     const markers: ActiveTripMarker[] = [];
 
     for (const tripDoc of snapshot.docs) {
@@ -191,14 +194,20 @@ export function subscribeActiveTripMarkers(
           vehicleCapacity: vehicle?.capacity,
           origin: routeData?.origin,
           destination: routeData?.destination,
-        },
-        driverLocation: driver.currentLocation,
-        availableSeats: driver.availableSeats ?? 0,
-      });
+        },      driverLocation: driver.currentLocation,
+      availableSeats: driver.availableSeats ?? 0,
+    });
     }
 
     onUpdate(markers);
-  });
+    },
+    (error) => {
+      // A failed listener (e.g. missing Firestore index) previously died
+      // silently, leaving the map permanently empty with no clue why.
+      console.error("[map] active-trips listener failed:", error);
+      onError?.(error);
+    }
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -242,7 +251,8 @@ export async function getDriverActiveTrip(
  */
 export function subscribeDriverActiveTrip(
   driverId: string,
-  onUpdate: (trip: Trip | null) => void
+  onUpdate: (trip: Trip | null) => void,
+  onError?: (error: Error) => void
 ): () => void {
   const tripQuery = query(
     collection(db, "trips"),
@@ -251,11 +261,13 @@ export function subscribeDriverActiveTrip(
     limit(1)
   );
 
-  return onSnapshot(tripQuery, async (snapshot) => {
-    if (snapshot.empty) {
-      onUpdate(null);
-      return;
-    }
+  return onSnapshot(
+    tripQuery,
+    async (snapshot) => {
+      if (snapshot.empty) {
+        onUpdate(null);
+        return;
+      }
 
     const tripDoc = snapshot.docs[0];
     const trip = { id: tripDoc.id, ...tripDoc.data() } as Trip;
@@ -269,8 +281,15 @@ export function subscribeDriverActiveTrip(
       }
     }
 
-    onUpdate(trip);
-  });
+      onUpdate(trip);
+    },
+    (error) => {
+      // Surface listener failures — silent death here makes the driver
+      // dashboard show no active trip and no bookings with zero feedback.
+      console.error("[map] driver active-trip listener failed:", error);
+      onError?.(error);
+    }
+  );
 }
 
 /**
@@ -352,7 +371,8 @@ export function subscribeDriverLocation(
  */
 export function subscribeDriverBookings(
   driverId: string,
-  onUpdate: (bookings: any[]) => void
+  onUpdate: (bookings: any[]) => void,
+  onError?: (error: Error) => void
 ): () => void {
   const bookingsQuery = query(
     collection(db, "bookings"),
@@ -361,18 +381,28 @@ export function subscribeDriverBookings(
     limit(20)
   );
 
-  return onSnapshot(bookingsQuery, async (snapshot) => {
-    const bookings = await Promise.all(
-      snapshot.docs.map(async (d) => {
-        const data = d.data();
-        const passengerName = data.passengerId
-          ? await resolveUserName(data.passengerId)
-          : "Passenger";
-        return { id: d.id, ...data, passengerName };
-      })
-    );
-    onUpdate(bookings);
-  });
+  return onSnapshot(
+    bookingsQuery,
+    async (snapshot) => {
+      const bookings = await Promise.all(
+        snapshot.docs.map(async (d) => {
+          const data = d.data();
+          const passengerName = data.passengerId
+            ? await resolveUserName(data.passengerId)
+            : "Passenger";
+          return { id: d.id, ...data, passengerName };
+        })
+      );
+      onUpdate(bookings);
+    },
+    (error) => {
+      // Surface listener failures — this is the query that feeds the
+      // driver's booking list; a silent death here means drivers never
+      // see new bookings and nobody knows why.
+      console.error("[map] driver bookings listener failed:", error);
+      onError?.(error);
+    }
+  );
 }
 
 /**
