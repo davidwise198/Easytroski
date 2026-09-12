@@ -256,6 +256,13 @@ export default function PassengerMapScreen() {
         return;
       }
 
+      // One active booking at a time — while a booking is pending or
+      // confirmed, the passenger cannot place another one.
+      if (lastBookingId && (lastBookingStatus === "pending" || lastBookingStatus === "confirmed")) {
+        showToast("info", "Booking in progress", "You already have an active booking. Cancel it before booking another ride.");
+        return;
+      }
+
       setBookingTripId(marker.trip.id);
       // Never send a booking the driver cannot fulfil — without this
       // the passenger could reserve seats a full tro-tro doesn't have.
@@ -311,7 +318,7 @@ export default function PassengerMapScreen() {
         setBookingTripId(null);
       }
     },
-    [selectedRouteId, requestedSeats]
+    [selectedRouteId, requestedSeats, lastBookingId, lastBookingStatus]
   );
 
   // Subscribe to driver location when booking is confirmed
@@ -766,7 +773,8 @@ export default function PassengerMapScreen() {
                     selectedMarker.trip.status === "completed" ||
                     selectedMarker.trip.status === "cancelled" ||
                     bookingTripId !== null ||
-                    (selectedMarker.availableSeats ?? 0) <= 0
+                    (selectedMarker.availableSeats ?? 0) <= 0 ||
+                    (lastBookingId !== null && (lastBookingStatus === "pending" || lastBookingStatus === "confirmed"))
                   }
                   style={styles.bookButton}
                 />
