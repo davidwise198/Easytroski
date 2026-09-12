@@ -35,7 +35,26 @@ async function resolveUserName(userId: string): Promise<string> {
   try {
     const driverDoc = await getDoc(doc(db, "drivers", userId));
     if (driverDoc.exists()) {
-      const name = driverDoc.data().name || "";
+      const driverData = driverDoc.data();
+      const name = driverData.name || "";
+      if (name) {
+        userNameCache.set(userId, name);
+        return name;
+      }
+      // Drivers store the names of passengers they carry, keyed by uid
+      const known = driverData.passengerNames?.[userId];
+      if (known) {
+        userNameCache.set(userId, known);
+        return known;
+      }
+    }
+  } catch { /* best-effort */ }
+
+  // Fallback: passenger profile document
+  try {
+    const passengerDoc = await getDoc(doc(db, "passengers", userId));
+    if (passengerDoc.exists()) {
+      const name = passengerDoc.data().name || "";
       if (name) {
         userNameCache.set(userId, name);
         return name;
@@ -43,7 +62,7 @@ async function resolveUserName(userId: string): Promise<string> {
     }
   } catch { /* best-effort */ }
 
-  return "Driver";
+  return "Passenger";
 }
 import {
   ActiveTripMarker,

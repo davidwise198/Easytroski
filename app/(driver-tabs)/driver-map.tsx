@@ -66,7 +66,7 @@ function tripStatusColor(status: TripStatus): string {
 }
 
 export default function DriverMapScreen() {
-  const { user, signOut } = useAuth();
+  const { user } = useAuth();
   const { colors, isDark } = useThemeColors();
   const ds = useMemo(() => ({
     topBarText: { color: colors.text },
@@ -350,9 +350,6 @@ export default function DriverMapScreen() {
     [user?.uid]
   );
 
-  const handleSignOut = useCallback(async () => {
-    await signOut();
-  }, [signOut]);
 
   const hasActiveTrip = activeTrip !== null;
   const isTripActive =
@@ -630,12 +627,6 @@ export default function DriverMapScreen() {
                 onPress={() => void handleEndTrip()}
                 disabled={ending}
                 style={styles.endTripButton}
-              />
-              <PrimaryButton
-                title="Sign out"
-                onPress={() => void handleSignOut()}
-                variant="outline"
-                style={styles.signOutButton}
               />
             </ScrollView>
           )}
@@ -1137,8 +1128,5 @@ const styles = StyleSheet.create({
 
   endTripButton: {
     marginTop: SPACING.md,
-  },
-  signOutButton: {
-    marginTop: SPACING.sm,
   },
 });

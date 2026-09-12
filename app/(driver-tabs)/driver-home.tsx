@@ -288,6 +288,8 @@ export default function DriverDashboardScreen() {
     setStarting(true);
     try {
       const tripId = await startTrip(driverId, selectedRouteId, "going", seatCount);
+      // Land the driver on the map where live bookings appear
+      router.replace("/driver-map");
       setActiveTrip({
         id: tripId,
         driverId,

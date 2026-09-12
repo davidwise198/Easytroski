@@ -43,7 +43,9 @@ service cloud.firestore {
         && fieldExists("name")
         && fieldExists("email")
         && reasonableSize();
-      allow read: if isOwner(userId) || isAdmin();
+      // Read: owner, admin, or any signed-in user — drivers need to see
+      // passenger names on incoming bookings (name/email only, no secrets).
+      allow read: if isOwner(userId) || isAdmin() || signedIn();
       allow update: if isOwner(userId) || isAdmin();
       allow delete: if false;
     }

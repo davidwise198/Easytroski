@@ -140,6 +140,8 @@ export default function PassengerMapScreen() {
   // Selected trip for bottom sheet
   const [selectedMarker, setSelectedMarker] =
     useState<ActiveTripMarker | null>(null);
+  // Seats requested for the booking currently being placed (1–4)
+  const [requestedSeats, setRequestedSeats] = useState(1);
 
   // Load routes on mount
   useEffect(() => {
@@ -206,6 +208,8 @@ export default function PassengerMapScreen() {
 
   const handleMarkerPress = useCallback((marker: ActiveTripMarker) => {
     setSelectedMarker(marker);
+    // Default seat request to 1, capped at what's actually available
+    setRequestedSeats(Math.min(1, Math.max(1, marker.availableSeats || 1)));
     if (mapRef.current) {
       mapRef.current.animateToRegion(
         {
@@ -253,30 +257,41 @@ export default function PassengerMapScreen() {
       }
 
       setBookingTripId(marker.trip.id);
+      // Never send a booking the driver cannot fulfil — without this
+      // the passenger could reserve seats a full tro-tro doesn't have.
+      const seatsLeft = marker.availableSeats ?? 0;
+      if (seatsLeft <= 0) {
+        showToast("error", "No seats left", "This tro-tro is full. Please pick another ride.");
+        setSelectedMarker(null);
+        return;
+      }
+      const seatsToBook = Math.min(requestedSeats, seatsLeft);
+
       try {
         const bookingId = await createBooking({
           passengerId,
           driverId: marker.trip.driverId,
           routeId: marker.trip.routeId ?? "",
           pickupLocation: {
-            latitude: marker.driverLocation.latitude,
-            longitude: marker.driverLocation.longitude,
+            latitude: marker.driverLocation?.latitude ?? 0,
+            longitude: marker.driverLocation?.longitude ?? 0,
             address: marker.trip.origin || "Pickup",
           },
           dropOffLocation: {
-            latitude: marker.driverLocation.latitude,
-            longitude: marker.driverLocation.longitude,
+            latitude: marker.driverLocation?.latitude ?? 0,
+            longitude: marker.driverLocation?.longitude ?? 0,
             address: marker.trip.destination || "Drop-off",
           },
-          seats: 1,
+          seats: seatsToBook,
         });
         setLastBookingId(bookingId);
         setLastBookingStatus("pending");
+        setBookingSeats(seatsToBook);
         setTrackedDriverId(marker.trip.driverId);
         showToast(
           "success",
           "Booking sent",
-          `Your driver will confirm ${marker.trip.origin} → ${marker.trip.destination} shortly.`
+          `Requested ${seatsToBook} seat${seatsToBook > 1 ? "s" : ""} — your driver will confirm shortly.`
         );
         setSelectedMarker(null);
 
@@ -285,6 +300,8 @@ export default function PassengerMapScreen() {
           .then(setMarkers)
           .catch(() => {});
       } catch (error) {
+        // Log full detail for diagnosis, show a friendly line to the user
+        console.error("[map] createBooking failed:", error);
         showToast(
           "error",
           "Booking failed",
@@ -294,7 +311,7 @@ export default function PassengerMapScreen() {
         setBookingTripId(null);
       }
     },
-    [selectedRouteId]
+    [selectedRouteId, requestedSeats]
   );
 
   // Subscribe to driver location when booking is confirmed
@@ -540,10 +557,10 @@ export default function PassengerMapScreen() {
             />
             <AppText variant="caption" style={[styles.bookingBannerText, ds.bookingBannerText]}>
               {lastBookingStatus === "confirmed"
-                ? `Booking confirmed! ${bookingSeats} seat${bookingSeats > 1 ? 's' : ''} reserved.${remainingSeats !== null ? ` ${remainingSeats} seat${remainingSeats !== 1 ? 's' : ''} remaining.` : ''} Your driver is on the way.`
+                ? `Booking ACCEPTED — ${bookingSeats} seat${bookingSeats > 1 ? 's' : ''} reserved.${remainingSeats !== null ? ` ${remainingSeats} seat${remainingSeats !== 1 ? 's' : ''} remaining.` : ''} Your driver is on the way.`
                 : lastBookingStatus === "cancelled"
-                  ? "Booking declined. The driver could not take this booking."
-                  : "Booking pending — waiting for driver to confirm..."}
+                  ? "Booking REJECTED by driver. Try booking another ride."
+                  : "Waiting for the driver to ACCEPT or REJECT your booking..."}
             </AppText>
             {(lastBookingStatus === "pending" || lastBookingStatus === "confirmed") && (
               <View style={styles.bannerActions}>
@@ -672,7 +689,7 @@ export default function PassengerMapScreen() {
                 )}
               </View>
 
-              {/* Seats */}
+              {/* Seats + seat picker */}
               <View style={[styles.sheetInfo, ds.sheetInfo]}>
                 <View style={styles.sheetInfoItem}>
                   <MaterialCommunityIcons
@@ -682,13 +699,40 @@ export default function PassengerMapScreen() {
                   />
                   <View>
                     <AppText variant="heading" style={[styles.sheetInfoValue, ds.sheetInfoValue]}>
-                      {selectedMarker.availableSeats}
+                      {selectedMarker.availableSeats ?? 0}
                     </AppText>
                     <AppText variant="caption" style={[styles.sheetInfoLabel, ds.sheetInfoLabel]}>
                       seats left
                     </AppText>
                   </View>
                 </View>
+                {(selectedMarker.availableSeats ?? 0) > 0 && (
+                  <View style={styles.sheetInfoItem}>
+                    <MaterialCommunityIcons name="ticket-confirmation" size={18} color={COLORS.primary} />
+                    <View style={{ flexDirection: "row", alignItems: "center" }}>
+                      <Pressable
+                        style={styles.seatPickerBtn}
+                        onPress={() => setRequestedSeats(Math.max(1, requestedSeats - 1))}
+                      >
+                        <MaterialCommunityIcons name="minus" size={16} color={COLORS.primary} />
+                      </Pressable>
+                      <AppText variant="heading" style={[styles.seatPickerValue, ds.sheetInfoValue]}>
+                        {requestedSeats}
+                      </AppText>
+                      <Pressable
+                        style={styles.seatPickerBtn}
+                        onPress={() =>
+                          setRequestedSeats(Math.min(selectedMarker.availableSeats ?? 1, requestedSeats + 1))
+                        }
+                      >
+                        <MaterialCommunityIcons name="plus" size={16} color={COLORS.primary} />
+                      </Pressable>
+                    </View>
+                    <AppText variant="caption" style={[styles.sheetInfoLabel, ds.sheetInfoLabel]}>
+                      book seats
+                    </AppText>
+                  </View>
+                )}
                 {selectedMarker.trip.vehicleCapacity && (
                   <View style={styles.sheetInfoItem}>
                     <MaterialCommunityIcons
@@ -713,13 +757,16 @@ export default function PassengerMapScreen() {
                   title={
                     bookingTripId === selectedMarker.trip.id
                       ? "Booking..."
-                      : `Book seat — ${selectedMarker.trip.origin} → ${selectedMarker.trip.destination}`
+                      : (selectedMarker.availableSeats ?? 0) <= 0
+                        ? "No seats available"
+                        : `Book ${requestedSeats} seat${requestedSeats > 1 ? "s" : ""} — ${selectedMarker.trip.origin} → ${selectedMarker.trip.destination}`
                   }
                   onPress={() => void handleBookTrip(selectedMarker)}
                   disabled={
                     selectedMarker.trip.status === "completed" ||
                     selectedMarker.trip.status === "cancelled" ||
-                    bookingTripId !== null
+                    bookingTripId !== null ||
+                    (selectedMarker.availableSeats ?? 0) <= 0
                   }
                   style={styles.bookButton}
                 />
@@ -1144,6 +1191,19 @@ const styles = StyleSheet.create({
   },
   bookButton: {
     marginBottom: SPACING.xs,
+  },
+  seatPickerBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.blueWash,
+  },
+  seatPickerValue: {
+    minWidth: 28,
+    textAlign: "center",
+    marginHorizontal: 6,
   },
 
   /* ── Live tracking ── */
