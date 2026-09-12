@@ -25,6 +25,7 @@ import { COLORS, SPACING } from "../../src/theme";
 import { useThemeColors } from "../../src/contexts/ThemeContext";
 import { useMemo } from "react";
 import { showToast } from "../../src/utils/toast";
+import { getFriendlyError } from "../../src/utils/firebaseErrors";
 import {
   ActiveTripMarker,
   Route,
@@ -287,7 +288,7 @@ export default function PassengerMapScreen() {
         showToast(
           "error",
           "Booking failed",
-          "We could not create your booking. Please try again."
+          getFriendlyError(error)
         );
       } finally {
         setBookingTripId(null);

@@ -68,7 +68,8 @@ service cloud.firestore {
       // Only admin can create vehicles (prevents any user from registering a vehicle).
       allow create: if isAdmin()
         && fieldExists("numberPlate")
-        && fieldExists("capacity")
+        // capacity is a number (seat count)
+        && request.resource.data.capacity is number
         && reasonableSize();
       // Driver can update their own vehicle (e.g. set active status).
       // Admin can update any vehicle.
@@ -97,6 +98,16 @@ service cloud.firestore {
         || (isOwner(driverId)
           && ownerFieldUnchanged("userId")
           && ownerFieldUnchanged("licenseNumber")
+          && reasonableSize())
+        // Passengers adjusting seats after booking/cancelling, or submitting
+        // a rating, may write ONLY these aggregate fields.
+        || (signedIn()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["availableSeats", "rating"])
+          && request.resource.data.get("availableSeats", 0) is number
+          && request.resource.data.get("availableSeats", 0) >= 0
+          && request.resource.data.get("rating", 0) is number
+          && request.resource.data.get("rating", 0) >= 0
+          && request.resource.data.get("rating", 0) <= 5
           && reasonableSize());
 
       allow delete: if isAdmin();
@@ -150,8 +161,9 @@ service cloud.firestore {
         && request.resource.data.passengerId == request.auth.uid
         && fieldExists("driverId")
         && fieldExists("routeId")
-        && fieldExists("pickupLocation")
-        && fieldExists("dropOffLocation")
+        // pickupLocation / dropOffLocation are objects ({latitude, longitude, address})
+        && request.resource.data.pickupLocation is map
+        && request.resource.data.dropOffLocation is map
         && reasonableSize();
 
       // Update: passenger or driver can update their own bookings; admin can update any.
@@ -168,6 +180,26 @@ service cloud.firestore {
       // admins can delete any booking.
       allow delete: if isAdmin()
         || resource.data.passengerId == request.auth.uid;
+    }
+
+    // ─── Ratings ───────────────────────────────────────────────────────
+
+    match /ratings/{ratingId} {
+      // Read: any signed-in user (driver averages are public info).
+      allow read: if signedIn();
+
+      // Create: a signed-in user can submit a rating only for themselves.
+      allow create: if signedIn()
+        && request.resource.data.passengerId == request.auth.uid
+        && request.resource.data.rating is number
+        && request.resource.data.rating >= 1
+        && request.resource.data.rating <= 5
+        && fieldExists("driverId")
+        && fieldExists("tripId")
+        && reasonableSize();
+
+      // Ratings are immutable once submitted.
+      allow update, delete: if isAdmin();
     }
 
     // ─── Driver locations (privacy-sensitive) ──────────────────────────

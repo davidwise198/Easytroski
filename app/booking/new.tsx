@@ -14,6 +14,7 @@ import { useThemeColors } from "../../src/contexts/ThemeContext";
 import { useMemo } from "react";
 import { Route } from "../../src/types/models";
 import { showToast } from "../../src/utils/toast";
+import { getFriendlyError } from "../../src/utils/firebaseErrors";
 
 /**
  * Simplified booking screen — auto-books 1 seat from origin → destination.
@@ -94,8 +95,8 @@ export default function NewBookingScreen() {
       });
       setBooked(true);
       showToast("success", "Booking sent", `Your driver will confirm the ${route.origin} → ${route.destination} trip shortly.`);
-    } catch {
-      showToast("error", "Booking failed", "We could not create your booking. Please try again.");
+    } catch (error) {
+      showToast("error", "Booking failed", getFriendlyError(error));
     } finally {
       setSubmitting(false);
     }
