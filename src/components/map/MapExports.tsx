@@ -15,3 +15,4 @@ export declare const MapView: MapViewType;
 export declare const PROVIDER_DEFAULT: string | null;
 export declare function Marker(props: AnyProps): React.ReactElement | null;
 export declare function Callout(props: AnyProps): React.ReactElement | null;
+export declare function Polyline(props: AnyProps): React.ReactElement | null;

@@ -17,6 +17,9 @@ import { TripMarker } from "../../src/components/map/TripMarker";
 import { useLocation } from "../../src/contexts/LocationContext";
 import { useAuth } from "../../src/contexts/AuthContext";
 import { getActiveTripMarkers, subscribeActiveTripMarkers, subscribeDriverLocation } from "../../src/services/map";
+import { fetchRoutePath, polylineLengthMeters, splitRouteAtDriver, RoutePath } from "../../src/services/directions";
+import { RouteLine } from "../../src/components/map/RouteLine";
+import { haversineMeters, formatDistance, formatEta, etaFromDistance } from "../../src/utils/geo";
 import StarRating from "../../src/components/ui/StarRating";
 import { createBooking, cancelBooking, rateDriver, getActiveRoutes } from "../../src/services/transport";
 import { auth, db } from "../../src/services/firebase";
@@ -103,6 +106,11 @@ export default function PassengerMapScreen() {
     busStopText: { color: colors.primary },
     sheetStatusText: { color: colors.white },
     chipTextSelected: { color: colors.white },
+    trackingPanel: { backgroundColor: colors.surface },
+    trackingPanelTitle: { color: colors.text },
+    trackingPanelSub: { color: colors.textSecondary },
+    sheetDistanceChip: { backgroundColor: colors.blueWash },
+    sheetDistanceText: { color: colors.primary },
   }), [colors, isDark]);
   const params = useLocalSearchParams<{ routeId?: string }>();
   const {
@@ -136,6 +144,10 @@ export default function PassengerMapScreen() {
   const [tripToRate, setTripToRate] = useState<{ tripId: string; driverId: string } | null>(null);
   const [driverApproaching, setDriverApproaching] = useState(false);
   const [remainingSeats, setRemainingSeats] = useState<number | null>(null);
+  const [routePath, setRoutePath] = useState<RoutePath | null>(null);
+  const [routedFrom, setRoutedFrom] = useState<{ latitude: number; longitude: number } | null>(null);
+  const routeFetchRef = useRef(0);
+  const trackedLocRef = useRef<{ latitude: number; longitude: number } | null>(null);
 
   // Selected trip for bottom sheet
   const [selectedMarker, setSelectedMarker] =
@@ -329,11 +341,88 @@ export default function PassengerMapScreen() {
     }
 
     const unsubscribe = subscribeDriverLocation(trackedDriverId, (location) => {
+      trackedLocRef.current = location;
       setTrackedDriverLocation(location);
     });
 
     return unsubscribe;
   }, [lastBookingStatus, trackedDriverId]);
+
+  // Bolt-style road route: fetch driver→pickup route, refetch after driver moves >300 m
+  useEffect(() => {
+    if (lastBookingStatus !== "confirmed" || !trackedDriverLocation || !location) {
+      setRoutePath(null);
+      setRoutedFrom(null);
+      return;
+    }
+    const driverPos = { latitude: trackedDriverLocation.latitude, longitude: trackedDriverLocation.longitude };
+    const pickup = { latitude: location.coords.latitude, longitude: location.coords.longitude };
+    if (routedFrom && haversineMeters(routedFrom, driverPos) < 300) return;
+
+    const ticket = ++routeFetchRef.current;
+    fetchRoutePath(driverPos, pickup)
+      .then((path) => {
+        if (ticket === routeFetchRef.current) {
+          setRoutePath(path);
+          setRoutedFrom(driverPos);
+        }
+      })
+      .catch(() => {});
+  }, [lastBookingStatus, trackedDriverLocation, location, routedFrom]);
+
+  // Fit camera to driver + passenger once tracking begins
+  useEffect(() => {
+    if (lastBookingStatus !== "confirmed" || !trackedDriverId) return;
+    const timer = setTimeout(() => {
+      const driverPos = trackedLocRef.current;
+      if (!driverPos || !mapRef.current) return;
+      const points = [driverPos];
+      if (location) {
+        points.push({ latitude: location.coords.latitude, longitude: location.coords.longitude });
+      }
+      const lats = points.map((p) => p.latitude);
+      const lngs = points.map((p) => p.longitude);
+      mapRef.current.animateToRegion(
+        {
+          latitude: (Math.min(...lats) + Math.max(...lats)) / 2,
+          longitude: (Math.min(...lngs) + Math.max(...lngs)) / 2,
+          latitudeDelta: Math.max(0.02, (Math.max(...lats) - Math.min(...lats)) * 1.9),
+          longitudeDelta: Math.max(0.02, (Math.max(...lngs) - Math.min(...lngs)) * 1.9),
+        },
+        600
+      );
+    }, 900);
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastBookingStatus, trackedDriverId]);
+
+  // Live driver→passenger metrics for the tracking panel
+  const liveDistanceM =
+    trackedDriverLocation && location
+      ? haversineMeters(trackedDriverLocation, {
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude,
+        })
+      : null;
+  const remainingRouteM =
+    routePath && trackedDriverLocation
+      ? polylineLengthMeters(splitRouteAtDriver(routePath.coordinates, trackedDriverLocation).remaining)
+      : liveDistanceM;
+  const fullRouteM = routePath ? polylineLengthMeters(routePath.coordinates) : 0;
+  const etaMinutes =
+    routePath?.fromRoads && routePath.durationSeconds > 0 && fullRouteM > 0 && remainingRouteM != null
+      ? (routePath.durationSeconds / 60) * Math.min(1, remainingRouteM / fullRouteM)
+      : remainingRouteM != null
+        ? etaFromDistance(remainingRouteM)
+        : null;
+  const driverArrived = liveDistanceM != null && liveDistanceM < 80;
+  const selectedDistanceM =
+    selectedMarker && location
+      ? haversineMeters(selectedMarker.driverLocation, {
+          latitude: location.coords.latitude,
+          longitude: location.coords.longitude,
+        })
+      : null;
 
   const handleCancelBooking = useCallback(async () => {
     if (!lastBookingId || !user?.uid) return;
@@ -436,6 +525,15 @@ export default function PassengerMapScreen() {
               </View>
             </Marker>
           )}
+
+          {/* Bolt-style road route line (driver → pickup) */}
+          {lastBookingStatus === "confirmed" && trackedDriverLocation && routePath && location && (
+            <RouteLine
+              driver={trackedDriverLocation}
+              destination={{ latitude: location.coords.latitude, longitude: location.coords.longitude }}
+              coordinates={routePath.coordinates}
+            />
+          )}
         </MapView>
 
         {/* ---- Top bar ---- */}
@@ -521,21 +619,30 @@ export default function PassengerMapScreen() {
           </ScrollView>
         </View>
 
-        {/* ---- Driver approaching notification ---- */}
-        {driverApproaching && lastBookingStatus === "confirmed" && (
-          <View style={[styles.approachingBanner, { top: 240 }]}>
-            <MaterialCommunityIcons name="bus-alert" size={18} color={COLORS.success} />              <AppText variant="caption" style={[styles.approachingText, ds.approachingText]}>
-                  Your driver is approaching! Get ready.
-                </AppText>
-          </View>
-        )}
-
-        {/* ---- Bus stop warning after booking ---- */}
-        {lastBookingId && (lastBookingStatus === "pending" || lastBookingStatus === "confirmed") && !driverApproaching && (
-          <View style={[styles.busStopBanner, ds.busStopBanner, { top: driverApproaching ? 290 : 240 }]}>
-            <MaterialCommunityIcons name="bus-stop" size={18} color={COLORS.primary} />              <AppText variant="caption" style={[styles.busStopText, ds.busStopText]}>
-                  Please stand by the nearest bus stop for easy pickup.
-                </AppText>
+        {/* ---- Live tracking panel (Bolt-style) ---- */}
+        {lastBookingStatus === "confirmed" && trackedDriverLocation && liveDistanceM != null && (
+          <View style={[styles.trackingPanel, ds.trackingPanel]}>
+            <View style={styles.trackingPanelIcon}>
+              <MaterialCommunityIcons
+                name={driverArrived ? "map-marker-check" : driverApproaching ? "bus-alert" : "map-marker-path"}
+                size={20}
+                color={driverApproaching || driverArrived ? COLORS.success : COLORS.primary}
+              />
+            </View>
+            <View style={styles.trackingPanelCopy}>
+              <AppText variant="heading" style={[styles.trackingPanelTitle, ds.trackingPanelTitle]}>
+                {driverArrived
+                  ? "Your driver has arrived"
+                  : `Driver is ${formatDistance(liveDistanceM)} away${etaMinutes != null ? ` • ${formatEta(etaMinutes)}` : ""}`}
+              </AppText>
+              <AppText variant="caption" style={[styles.trackingPanelSub, ds.trackingPanelSub]}>
+                {driverApproaching || driverArrived
+                  ? "Get ready — your driver is close"
+                  : routePath?.fromRoads
+                    ? "Live route to your pickup"
+                    : "Stand by the nearest bus stop for easy pickup"}
+              </AppText>
+            </View>
           </View>
         )}
 
@@ -545,7 +652,7 @@ export default function PassengerMapScreen() {
           <View style={[
             styles.bookingBanner,
             ds.bookingBanner,
-            { top: (driverApproaching ? 290 : 0) + ((lastBookingStatus === "pending" || lastBookingStatus === "confirmed") && !driverApproaching ? 50 : 0) + 240 },
+            { top: lastBookingStatus === "confirmed" ? 300 : 240 },
             lastBookingStatus === "confirmed" && styles.bookingBannerSuccess,
             lastBookingStatus === "cancelled" && styles.bookingBannerError,
           ]}>
@@ -663,6 +770,14 @@ export default function PassengerMapScreen() {
                         {tripStatusLabel(selectedMarker.trip.status)}
                       </AppText>
                     </View>
+                    {selectedDistanceM != null && (
+                      <View style={[styles.sheetDistanceChip, ds.sheetDistanceChip]}>
+                        <MaterialCommunityIcons name="map-marker-distance" size={12} color={COLORS.primary} />
+                        <AppText variant="caption" style={[styles.sheetDistanceText, ds.sheetDistanceText]}>
+                          {formatDistance(selectedDistanceM)} from you
+                        </AppText>
+                      </View>
+                    )}
                   </View>
                 </View>
               </View>
@@ -1215,6 +1330,55 @@ const styles = StyleSheet.create({
   },
 
   /* ── Live tracking ── */
+  trackingPanel: {
+    position: "absolute",
+    left: 16,
+    right: 16,
+    top: 240,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+    padding: SPACING.md,
+    borderRadius: 16,
+    shadowColor: COLORS.navy,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  trackingPanelIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: COLORS.blueWash,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  trackingPanelCopy: {
+    flex: 1,
+  },
+  trackingPanelTitle: {
+    fontSize: 14,
+    color: COLORS.navy,
+  },
+  trackingPanelSub: {
+    color: COLORS.textSecondary,
+    marginTop: 2,
+  },
+  sheetDistanceChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: COLORS.blueWash,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  sheetDistanceText: {
+    color: COLORS.primary,
+    fontSize: 11,
+    fontWeight: "600",
+  },
   trackingMarker: {
     width: 40,
     height: 40,

@@ -38,6 +38,11 @@ export function Callout(_props: AnyProps) {
   return null;
 }
 
+export function Polyline(_props: AnyProps) {
+  // Route lines are invisible on web; the MapView placeholder already explains.
+  return null;
+}
+
 const styles = StyleSheet.create({
   container: {
     flex: 1,

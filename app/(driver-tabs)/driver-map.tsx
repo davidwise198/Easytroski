@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Linking,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -23,6 +25,8 @@ import {
   getDriverPickupLocations,
 } from "../../src/services/map";
 import { getActiveRoutes, startTrip, endTrip, confirmBooking, cancelBooking, updateBookingStatus, updateDriverSeats, incrementDriverSeats, updateDriverLocation } from "../../src/services/transport";
+import { fetchRoutePath, RoutePath } from "../../src/services/directions";
+import { haversineMeters, formatDistance, formatEta, etaFromDistance } from "../../src/utils/geo";
 import { COLORS, SPACING } from "../../src/theme";
 import { useThemeColors } from "../../src/contexts/ThemeContext";
 import { useMemo } from "react";
@@ -126,6 +130,14 @@ export default function DriverMapScreen() {
   const [editingSeats, setEditingSeats] = useState(false);
   const [pickupLocations, setPickupLocations] = useState<Array<{ id: string; latitude: number; longitude: number; passengerName: string; seats: number; status: string }>>([]);
   const [selectedPickup, setSelectedPickup] = useState<{ id: string; latitude: number; longitude: number; passengerName: string; seats: number; status: string } | null>(null);
+  const [nextPickupRoute, setNextPickupRoute] = useState<RoutePath | null>(null);
+  const [routedFrom, setRoutedFrom] = useState<{ latitude: number; longitude: number } | null>(null);
+  const routeFetchRef = useRef(0);
+
+  // Derived: confirmed bookings drive GPS cadence + the next-pickup nav card
+  const confirmedBookings = bookings.filter((b: any) => b.status === "confirmed");
+  const nextPickup = confirmedBookings.length > 0 ? confirmedBookings[0] : null;
+  const hasConfirmedBooking = confirmedBookings.length > 0;
 
   // Real-time location tracking for active trips
   const locationSubscriptionRef =
@@ -199,11 +211,9 @@ export default function DriverMapScreen() {
       }
 
       locationSubscriptionRef.current = await Location.watchPositionAsync(
-        {
-          accuracy: Location.Accuracy.Balanced,
-          timeInterval: 15000,
-          distanceInterval: 50,
-        },
+        hasConfirmedBooking
+          ? { accuracy: Location.Accuracy.High, timeInterval: 7000, distanceInterval: 15 }
+          : { accuracy: Location.Accuracy.Balanced, timeInterval: 15000, distanceInterval: 50 },
         ({ coords }) => {
           if (!cancelled) {
             void updateDriverLocation(
@@ -227,7 +237,7 @@ export default function DriverMapScreen() {
       }
       locationSubscriptionRef.current = null;
     };
-  }, [activeTrip, user?.uid]);
+  }, [activeTrip, user?.uid, hasConfirmedBooking]);
 
   // Re-center map on user location
   useEffect(() => {
@@ -350,6 +360,71 @@ export default function DriverMapScreen() {
     [user?.uid]
   );
 
+
+  // Road route to the next confirmed pickup — refetch after moving >300 m
+  useEffect(() => {
+    if (!nextPickup?.pickupLocation?.latitude || !location) {
+      setNextPickupRoute(null);
+      setRoutedFrom(null);
+      return;
+    }
+    const from = {
+      latitude: location.coords.latitude,
+      longitude: location.coords.longitude,
+    };
+    if (routedFrom && haversineMeters(routedFrom, from) < 300) return;
+    const to = {
+      latitude: nextPickup.pickupLocation.latitude,
+      longitude: nextPickup.pickupLocation.longitude,
+    };
+    const ticket = ++routeFetchRef.current;
+    fetchRoutePath(from, to)
+      .then((routePath) => {
+        if (ticket === routeFetchRef.current) {
+          setNextPickupRoute(routePath);
+          setRoutedFrom(from);
+        }
+      })
+      .catch(() => {});
+  }, [nextPickup?.id, location, routedFrom]);
+
+  const nextPickupDistanceM =
+    nextPickup?.pickupLocation?.latitude && location
+      ? haversineMeters(
+          { latitude: location.coords.latitude, longitude: location.coords.longitude },
+          { latitude: nextPickup.pickupLocation.latitude, longitude: nextPickup.pickupLocation.longitude }
+        )
+      : null;
+  const nextPickupEtaMin =
+    nextPickupRoute?.fromRoads && nextPickupRoute.durationSeconds > 0
+      ? nextPickupRoute.durationSeconds / 60
+      : nextPickupDistanceM != null
+        ? etaFromDistance(nextPickupDistanceM)
+        : null;
+
+  const selectedPickupDistanceM =
+    selectedPickup && location
+      ? haversineMeters(
+          { latitude: location.coords.latitude, longitude: location.coords.longitude },
+          { latitude: selectedPickup.latitude, longitude: selectedPickup.longitude }
+        )
+      : null;
+
+  // Hand off to Google Maps turn-by-turn (fallback: web directions)
+  const handleNavigateToPickup = useCallback(() => {
+    if (!nextPickup?.pickupLocation?.latitude) return;
+    const { latitude, longitude } = nextPickup.pickupLocation;
+    const appUrl =
+      Platform.OS === "ios"
+        ? `maps://app?daddr=${latitude},${longitude}&dirflg=d`
+        : `google.navigation:q=${latitude},${longitude}`;
+    const webUrl = `https://www.google.com/maps/dir/?api=1&destination=${latitude},${longitude}&travelmode=driving`;
+    Linking.canOpenURL(appUrl)
+      .then((supported) => Linking.openURL(supported ? appUrl : webUrl))
+      .catch(() => {
+        showToast("error", "Navigation unavailable", "Could not open maps navigation.");
+      });
+  }, [nextPickup]);
 
   const hasActiveTrip = activeTrip !== null;
   const isTripActive =
@@ -515,6 +590,44 @@ export default function DriverMapScreen() {
           ) : (
             /* Active trip — show trip info and bookings */
             <ScrollView style={styles.panelContent} showsVerticalScrollIndicator={false}>
+              {/* Next pickup — Bolt-style navigation card */}
+              {nextPickup && (
+                <View style={styles.nextPickupCard}>
+                  <View style={styles.nextPickupHeader}>
+                    <View style={styles.nextPickupIcon}>
+                      <MaterialCommunityIcons name="navigation-variant-outline" size={18} color={COLORS.white} />
+                    </View>
+                    <View style={styles.nextPickupCopy}>
+                      <AppText variant="caption" style={styles.nextPickupEyebrow}>NEXT PICKUP</AppText>
+                      <AppText variant="heading" style={styles.nextPickupName}>
+                        {nextPickup.passengerName || "Passenger"}
+                      </AppText>
+                    </View>
+                    {nextPickupDistanceM != null && (
+                      <View style={styles.nextPickupDistance}>
+                        <AppText variant="heading" style={styles.nextPickupDistanceText}>
+                          {formatDistance(nextPickupDistanceM)}
+                        </AppText>
+                        {nextPickupEtaMin != null && (
+                          <AppText variant="caption" style={styles.nextPickupEta}>
+                            {formatEta(nextPickupEtaMin)}
+                          </AppText>
+                        )}
+                      </View>
+                    )}
+                  </View>
+                  <View style={styles.nextPickupActions}>
+                    <Pressable style={styles.navigateBtn} onPress={handleNavigateToPickup}>
+                      <MaterialCommunityIcons name="google-maps" size={16} color={COLORS.white} />
+                      <AppText variant="caption" style={styles.navigateBtnText}>Navigate</AppText>
+                    </Pressable>
+                    <AppText variant="caption" style={styles.nextPickupSeats} numberOfLines={1}>
+                      {nextPickup.seats || 1} seat{(nextPickup.seats || 1) > 1 ? "s" : ""} • {nextPickup.pickupLocation?.address || "Pickup point"}
+                    </AppText>
+                  </View>
+                </View>
+              )}
+
               {/* Trip status */}
               <View style={styles.tripStatusRow}>
                 <View
@@ -653,6 +766,11 @@ export default function DriverMapScreen() {
                     <AppText variant="caption" style={styles.pickupSeats}>
                       {selectedPickup.seats} seat{selectedPickup.seats > 1 ? "s" : ""}
                     </AppText>
+                    {selectedPickupDistanceM != null && (
+                      <AppText variant="caption" style={styles.pickupSeats}>
+                        • {formatDistance(selectedPickupDistanceM)} away
+                      </AppText>
+                    )}
                   </View>
                 </View>
               </View>
@@ -1126,6 +1244,71 @@ const styles = StyleSheet.create({
     fontSize: 11,
   },
 
+  nextPickupCard: {
+    borderRadius: 16,
+    padding: SPACING.md,
+    marginBottom: SPACING.md,
+    backgroundColor: COLORS.navy,
+  },
+  nextPickupHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+  },
+  nextPickupIcon: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: COLORS.primary,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  nextPickupCopy: {
+    flex: 1,
+  },
+  nextPickupEyebrow: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 1,
+  },
+  nextPickupName: {
+    color: COLORS.white,
+    fontSize: 16,
+  },
+  nextPickupDistance: {
+    alignItems: "flex-end",
+  },
+  nextPickupDistanceText: {
+    color: COLORS.white,
+    fontSize: 16,
+  },
+  nextPickupEta: {
+    color: "rgba(255,255,255,0.7)",
+  },
+  nextPickupActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.md,
+    marginTop: SPACING.md,
+  },
+  navigateBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  navigateBtnText: {
+    color: COLORS.white,
+    fontWeight: "700",
+  },
+  nextPickupSeats: {
+    color: "rgba(255,255,255,0.75)",
+    flex: 1,
+  },
   endTripButton: {
     marginTop: SPACING.md,
   },
