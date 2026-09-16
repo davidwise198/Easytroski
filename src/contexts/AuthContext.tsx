@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useState } from "react";
+import React, { createContext, useContext, useEffect, useRef, useState } from "react";
 import { onAuthStateChanged, signOut, User } from "firebase/auth";
 import { doc, onSnapshot } from "firebase/firestore";
 
@@ -6,6 +6,7 @@ import { auth, db } from "../services/firebase";
 import { UserRole } from "../types/models";
 import { runCleanupTasks } from "../services/transport";
 import { syncDriverProfile } from "../services/auth";
+import { beginSession, endSession } from "../services/session";
 
 
 type AuthContextValue = {
@@ -30,6 +31,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
   const [user, setUser] = useState<User | null>(null);
   const [userRole, setUserRole] = useState<UserRole | null>(null);
   const [loading, setLoading] = useState(true);
+  const sessionUnsubRef = useRef<(() => void) | null>(null);
 
   useEffect(() => {
     let unsubscribeProfile: (() => void) | undefined;
@@ -37,11 +39,20 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser) => {
       setUser(firebaseUser);
 
+      // Single-device enforcement: claim (or re-claim) the install session.
+      sessionUnsubRef.current?.();
+      sessionUnsubRef.current = null;
+
       // Clean up any previous profile listener
       unsubscribeProfile?.();
       unsubscribeProfile = undefined;
 
       if (firebaseUser) {
+        // Another device taking over the account force-signs this one out.
+        sessionUnsubRef.current = beginSession(firebaseUser.uid, () => {
+          signOut(auth).catch(() => {});
+        });
+
         // Run cleanup once per session: cancel stale bookings, auto-offline inactive drivers
         runCleanupTasks().catch(() => {});
 
@@ -81,10 +92,15 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
     return () => {
       unsubscribeProfile?.();
       unsubscribeAuth();
+      sessionUnsubRef.current?.();
+      sessionUnsubRef.current = null;
     };
   }, []);
 
   const handleSignOut = async () => {
+    if (user) {
+      await endSession(user.uid);
+    }
     await signOut(auth);
     setUser(null);
     setUserRole(null);

@@ -65,7 +65,7 @@ function decodePolyline(encoded: string): LatLng[] {
 
 // --- Cache: one request per rounded pair, deduped while in flight -----------
 
-const CACHE_TTL_MS = 120_000; // road shapes stay valid briefly
+const CACHE_TTL_MS = 45_000; // short — the "from" leg moves with the driver
 const cache = new Map<string, { at: number; path: RoutePath }>();
 const inFlight = new Map<string, Promise<RoutePath>>();
 
@@ -115,7 +115,7 @@ export async function fetchRoutePath(
       `https://maps.googleapis.com/maps/api/directions/json` +
       `?origin=${from.latitude},${from.longitude}` +
       `&destination=${to.latitude},${to.longitude}` +
-      `&mode=driving&key=${apiKey}`;
+      `&mode=driving&alternatives=false&units=metric&key=${apiKey}`;
 
     const response = await fetch(url);
     const json = (await response.json()) as {
@@ -227,4 +227,51 @@ export function polylineLengthMeters(coordinates: LatLng[]): number {
     total += haversineMeters(coordinates[i], coordinates[i + 1]);
   }
   return total;
+}
+
+/**
+ * Snap a live GPS position onto the nearest point of a route polyline.
+ * The driver's raw fix is often a few meters off the road centerline; without
+ * snapping, the rendered "remaining" leg starts in mid-air and the line looks
+ * broken. Returns the original point when the route is too short to snap to.
+ */
+export function snapToRoute(
+  point: LatLng,
+  coordinates: LatLng[]
+): LatLng {
+  if (coordinates.length < 2) return point;
+
+  let bestIdx = 0;
+  let bestDist = Infinity;
+  for (let i = 0; i < coordinates.length - 1; i++) {
+    const d = pointToSegmentMeters(point, coordinates[i], coordinates[i + 1]);
+    if (d < bestDist) {
+      bestDist = d;
+      bestIdx = i;
+    }
+  }
+
+  // Project the point onto the winning segment (same flat-earth math as above)
+  const kx = 111320 * Math.cos((point.latitude * Math.PI) / 180);
+  const ky = 110574;
+  const px = point.longitude * kx;
+  const py = point.latitude * ky;
+  const a = coordinates[bestIdx];
+  const b = coordinates[bestIdx + 1];
+  const ax = a.longitude * kx;
+  const ay = a.latitude * ky;
+  const bx = b.longitude * kx;
+  const by = b.latitude * ky;
+  const dx = bx - ax;
+  const dy = by - ay;
+  const lenSq = dx * dx + dy * dy;
+  const t =
+    lenSq === 0
+      ? 0
+      : Math.max(0, Math.min(1, ((px - ax) * dx + (py - ay) * dy) / lenSq));
+
+  return {
+    latitude: a.latitude + t * (b.latitude - a.latitude),
+    longitude: a.longitude + t * (b.longitude - a.longitude),
+  };
 }

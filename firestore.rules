@@ -50,6 +50,15 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // ─── Install sessions (one account, one device) ────────────────────
+    //
+    // Each device writes its session id here on sign-in; the newest device
+    // overwrites the doc and older devices detect the mismatch and sign out.
+    match /install-sessions/{userId} {
+      allow read: if isOwner(userId);
+      allow write: if isOwner(userId);
+    }
+
     // ─── Routes (admin-managed) ────────────────────────────────────────
 
     match /routes/{routeId} {
@@ -166,6 +175,9 @@ service cloud.firestore {
         // pickupLocation / dropOffLocation are objects ({latitude, longitude, address})
         && request.resource.data.pickupLocation is map
         && request.resource.data.dropOffLocation is map
+        // A booking reserves between 1 and 3 seats
+        && request.resource.data.get("seats", 1) >= 1
+        && request.resource.data.get("seats", 1) <= 3
         && reasonableSize();
 
       // Update: passenger or driver can update their own bookings; admin can update any.

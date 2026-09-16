@@ -393,10 +393,12 @@ export function subscribeDriverBookings(
   onUpdate: (bookings: any[]) => void,
   onError?: (error: Error) => void
 ): () => void {
+  // Live work only — completed and cancelled bookings belong in the trips
+  // history, not on the driver's working map.
   const bookingsQuery = query(
     collection(db, "bookings"),
     where("driverId", "==", driverId),
-    where("status", "in", ["pending", "confirmed", "completed"]),
+    where("status", "in", ["pending", "confirmed"]),
     limit(20)
   );
 

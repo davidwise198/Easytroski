@@ -332,10 +332,10 @@ export default function DriverDashboardScreen() {
           {/* ─── Status panel + online switch ─── */}
           <View style={[styles.statusPanel, ds.statusPanel, online && ds.statusPanelOnline]}>
             <View style={styles.statusCopy}>
-              <AppText variant="heading" style={[styles.statusTitle, ds.statusTitle]}>
+              <AppText variant="heading" style={[styles.statusTitle, ds.statusTitle]} numberOfLines={1}>
                 {activeTrip ? "Trip active" : online ? "You are online" : "You are offline"}
               </AppText>
-              <AppText variant="caption" style={styles.statusText}>
+              <AppText variant="caption" style={styles.statusText} numberOfLines={2}>
                 {activeTrip
                   ? "Passengers can see your trip on the map."
                   : online
@@ -520,10 +520,18 @@ const styles = StyleSheet.create({
     backgroundColor: "#102A43",
     marginBottom: SPACING.lg,
   },
-  statusTitle: { color: "#FFFFFF", fontSize: 18, lineHeight: 24 },
+  statusTitle: {
+    color: "#FFFFFF",
+    fontSize: 18,
+    lineHeight: 24,
+    flexShrink: 1,
+  },
   statusText: {
     color: "rgba(255,255,255,0.72)",
     marginTop: 3,
+    fontSize: 13,
+    lineHeight: 18,
+    flexShrink: 1,
   },
 
   /* ── Pulse dot ── */

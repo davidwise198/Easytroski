@@ -3,7 +3,7 @@ import { StyleSheet, View } from "react-native";
 import { Marker, Polyline } from "./MapExports";
 
 import { COLORS } from "../../theme";
-import { splitRouteAtDriver } from "../../services/directions";
+import { splitRouteAtDriver, snapToRoute } from "../../services/directions";
 
 // ---------------------------------------------------------------------------
 // RouteLine — Bolt-style route overlay between a live driver and a pickup.
@@ -21,10 +21,12 @@ export type RouteLineProps = {
 };
 
 export function RouteLine({ driver, destination, coordinates }: RouteLineProps) {
-  const { covered, remaining } = useMemo(
-    () => splitRouteAtDriver(coordinates, driver),
-    [coordinates, driver.latitude, driver.longitude]
-  );
+  const { covered, remaining } = useMemo(() => {
+    // Raw GPS fixes are often a few meters off the road centerline — snap
+    // the driver onto the route so the line never starts in mid-air.
+    const onRoad = snapToRoute(driver, coordinates);
+    return splitRouteAtDriver(coordinates, onRoad);
+  }, [coordinates, driver.latitude, driver.longitude]);
 
   return (
     <>

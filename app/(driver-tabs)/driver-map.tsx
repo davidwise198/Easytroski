@@ -1,10 +1,8 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  ActivityIndicator,
   Linking,
   Platform,
   Pressable,
-  RefreshControl,
   ScrollView,
   StyleSheet,
   Vibration,
@@ -26,7 +24,7 @@ import {
   subscribeDriverBookings,
   getDriverPickupLocations,
 } from "../../src/services/map";
-import { getActiveRoutes, startTrip, endTrip, confirmBooking, cancelBooking, updateBookingStatus, updateDriverSeats, incrementDriverSeats, updateDriverLocation } from "../../src/services/transport";
+import { getActiveRoutes, startTrip, endTrip, confirmBooking, cancelBooking, updateBookingStatus, updateDriverSeats, updateDriverLocation } from "../../src/services/transport";
 import { fetchRoutePath, RoutePath } from "../../src/services/directions";
 import { haversineMeters, formatDistance, formatEta, etaFromDistance } from "../../src/utils/geo";
 import { COLORS, SPACING } from "../../src/theme";
@@ -94,13 +92,10 @@ export default function DriverMapScreen() {
     seatCounterRow: { backgroundColor: colors.veryLightBlue },
     bookingCard: { backgroundColor: colors.veryLightBlue },
     bookingIcon: { backgroundColor: colors.white },
-    trackingBadge: { backgroundColor: colors.veryLightBlue },
     pickupLabel: { backgroundColor: colors.surface },
     permissionText: { color: colors.textSecondary },
     sectionLabel: { color: colors.textSecondary },
     pickupLabelText: { color: colors.text },
-    panelSubtitle: { color: colors.textSecondary },
-    trackingText: { color: colors.textSecondary },
     tripStatusText: { color: colors.white },
     tripTime: { color: colors.textSecondary },
     bookingCardItem: { backgroundColor: colors.veryLightBlue },
@@ -131,7 +126,7 @@ export default function DriverMapScreen() {
   const [starting, setStarting] = useState(false);
   const [ending, setEnding] = useState(false);
   const [seatCount, setSeatCount] = useState(12);
-  const [editingSeats, setEditingSeats] = useState(false);
+  const [panelExpanded, setPanelExpanded] = useState(true);
   const [pickupLocations, setPickupLocations] = useState<Array<{ id: string; latitude: number; longitude: number; passengerName: string; seats: number; status: string }>>([]);
   const [selectedPickup, setSelectedPickup] = useState<{ id: string; latitude: number; longitude: number; passengerName: string; seats: number; status: string } | null>(null);
   const [nextPickupRoute, setNextPickupRoute] = useState<RoutePath | null>(null);
@@ -144,6 +139,8 @@ export default function DriverMapScreen() {
   const seenBookingIdsRef = useRef<Set<string>>(new Set());
   const alertDismissedIdsRef = useRef<Set<string>>(new Set());
   const firstLocationFixRef = useRef(false);
+  // Previous bookings snapshot — lets us detect a passenger cancelling on their side
+  const prevBookingsRef = useRef<Map<string, any>>(new Map());
 
   // Derived: confirmed bookings drive GPS cadence + the next-pickup nav card
   const confirmedBookings = bookings.filter((b: any) => b.status === "confirmed");
@@ -173,6 +170,30 @@ export default function DriverMapScreen() {
     setAlertBooking(newest);
     setAlertSecondsLeft(ALERT_SECONDS);
     Vibration.vibrate([0, 450, 250, 450], true);
+  }, []);
+
+  // A booking that vanishes from the live list without the driver acting on it
+  // was cancelled by the passenger (or the system) — never let it vanish silently.
+  const detectPassengerCancellations = useCallback((updatedBookings: any[]) => {
+    const current = new Map<string, any>();
+    updatedBookings.forEach((b: any) => {
+      if (b.id) current.set(b.id, b);
+    });
+    for (const [id, prev] of prevBookingsRef.current) {
+      if (current.has(id)) continue;
+      if (prev.status !== "pending" && prev.status !== "confirmed") continue;
+      if (prev.cancelledBy === "driver") continue; // we did it ourselves
+      if (prev.passengerName) {
+        showToast(
+          "info",
+          "Booking cancelled",
+          prev.cancelledBy === "passenger"
+            ? prev.passengerName + " cancelled their booking."
+            : "A booking was cancelled (" + (prev.cancelReason || "system") + ")."
+        );
+      }
+    }
+    prevBookingsRef.current = current;
   }, []);
 
   // Load routes
@@ -217,6 +238,7 @@ export default function DriverMapScreen() {
         // Also refresh pickup locations when bookings change
         getDriverPickupLocations(user.uid).then(setPickupLocations).catch(() => {});
         detectNewBookings(updatedBookings);
+        detectPassengerCancellations(updatedBookings);
       },
       (error) => {
         showToast("error", "Connection problem", "New bookings may not appear. Check your connection.");
@@ -225,7 +247,7 @@ export default function DriverMapScreen() {
     );
 
     return unsubscribe;
-  }, [activeTrip, user?.uid, detectNewBookings]);
+  }, [activeTrip, user?.uid, detectNewBookings, detectPassengerCancellations]);
 
   // Location tracking when trip is active
   useEffect(() => {
@@ -671,38 +693,50 @@ export default function DriverMapScreen() {
           {!hasActiveTrip ? (
             /* No active trip — show start button */
             <View style={styles.panelContent}>
-              <View style={styles.panelHeader}>
-                <View style={styles.panelIcon}>
-                  <MaterialCommunityIcons name="steering" size={22} color={COLORS.primary} />
+              <Pressable
+                style={styles.panelToggle}
+                onPress={() => setPanelExpanded((v) => !v)}
+              >
+                <View style={styles.panelIconSmall}>
+                  <MaterialCommunityIcons name="steering" size={18} color={COLORS.primary} />
                 </View>
-                <View style={styles.panelCopy}>
-                  <AppText variant="heading" style={[styles.panelTitle, ds.panelTitle]}>Ready to go?</AppText>
-                  <AppText variant="caption" style={[styles.panelSubtitle, ds.panelSubtitle]}>
-                    {selectedRouteId
-                      ? "Start your trip to become visible to passengers"
-                      : "Choose a route above to start your trip"}
-                  </AppText>
-                </View>
-              </View>
-
-              {isTripActive && location && (
-                <View style={[styles.trackingBadge, ds.trackingBadge]}>
-                  <View style={styles.trackingDot} />
-                  <AppText variant="caption" style={[styles.trackingText, ds.trackingText]}>
-                    Live tracking active — updating every 15s
-                  </AppText>
-                </View>
+                <AppText variant="caption" style={[styles.panelToggleText, ds.panelTitle]} numberOfLines={1}>
+                  {selectedRouteId
+                    ? "Ready to go — start your trip when set"
+                    : "Choose a route to begin"}
+                </AppText>
+                <MaterialCommunityIcons
+                  name={panelExpanded ? "chevron-down" : "chevron-up"}
+                  size={20}
+                  color={COLORS.textSecondary}
+                />
+              </Pressable>
+              {panelExpanded && (
+                <PrimaryButton
+                  title={starting ? "Starting trip..." : "Start trip"}
+                  onPress={() => void handleStartTrip()}
+                  disabled={starting || !selectedRouteId}
+                />
               )}
-
-              <PrimaryButton
-                title={starting ? "Starting trip..." : "Start trip"}
-                onPress={() => void handleStartTrip()}
-                disabled={starting || !selectedRouteId}
-              />
             </View>
           ) : (
             /* Active trip — show trip info and bookings */
             <ScrollView style={styles.panelContent} showsVerticalScrollIndicator={false}>
+              <Pressable
+                style={styles.panelToggle}
+                onPress={() => setPanelExpanded((v) => !v)}
+              >
+                <AppText variant="caption" style={[styles.panelToggleText, ds.panelTitle]} numberOfLines={1}>
+                  Trip active — {bookings.length} booking{bookings.length === 1 ? "" : "s"} • {seatCount} seat{seatCount === 1 ? "" : "s"} left
+                </AppText>
+                <MaterialCommunityIcons
+                  name={panelExpanded ? "chevron-down" : "chevron-up"}
+                  size={20}
+                  color={COLORS.textSecondary}
+                />
+              </Pressable>
+              {panelExpanded && (
+              <>
               {/* Next pickup — Bolt-style navigation card */}
               {nextPickup && (
                 <View style={styles.nextPickupCard}>
@@ -883,6 +917,8 @@ export default function DriverMapScreen() {
                 disabled={ending}
                 style={styles.endTripButton}
               />
+              </>
+              )}
             </ScrollView>
           )}
         </View>
@@ -915,8 +951,13 @@ export default function DriverMapScreen() {
                     )}
                   </View>
                 </View>
+                <Pressable
+                  style={({ pressed }) => [styles.pickupSheetClose, pressed && { opacity: 0.7 }]}
+                  onPress={() => setSelectedPickup(null)}
+                >
+                  <MaterialCommunityIcons name="close" size={20} color={COLORS.textSecondary} />
+                </Pressable>
               </View>
-              <PrimaryButton title="Close" onPress={() => setSelectedPickup(null)} variant="outline" />
             </View>
           </View>
         )}
@@ -1187,31 +1228,24 @@ const styles = StyleSheet.create({
   panelContent: {
     paddingHorizontal: SPACING.lg,
   },
-  panelHeader: {
+  panelToggle: {
     flexDirection: "row",
-    alignItems: "flex-start",
-    gap: SPACING.md,
-    marginBottom: SPACING.md,
+    alignItems: "center",
+    gap: SPACING.sm,
+    paddingVertical: SPACING.sm,
   },
-  panelIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
+  panelIconSmall: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: COLORS.blueWash,
   },
-  panelCopy: {
+  panelToggleText: {
     flex: 1,
-  },
-  panelTitle: {
-    color: COLORS.navy,
-    fontSize: 20,
-    lineHeight: 26,
-  },
-  panelSubtitle: {
-    color: COLORS.textSecondary,
-    marginTop: 2,
+    fontSize: 14,
+    fontWeight: "600",
   },
 
   // Trip active state
@@ -1229,12 +1263,6 @@ const styles = StyleSheet.create({
     paddingVertical: SPACING.xs + 2,
     borderRadius: 14,
   },
-  trackingDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
-    backgroundColor: COLORS.white,
-  },
   trackingDotSmall: {
     width: 6,
     height: 6,
@@ -1248,21 +1276,6 @@ const styles = StyleSheet.create({
   },
   tripTime: {
     color: COLORS.textSecondary,
-  },
-
-  // Tracking badge
-  trackingBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: SPACING.sm,
-    padding: SPACING.sm,
-    marginBottom: SPACING.md,
-    borderRadius: 10,
-    backgroundColor: COLORS.veryLightBlue,
-  },
-  trackingText: {
-    color: COLORS.textSecondary,
-    fontSize: 11,
   },
 
   // Seat counter
@@ -1444,6 +1457,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: COLORS.blueWash,
+  },
+  pickupSheetClose: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.veryLightBlue,
   },
   pickupSheetName: {
     color: COLORS.navy,
