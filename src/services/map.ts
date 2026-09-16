@@ -139,8 +139,9 @@ export async function getActiveTripMarkers(
       trip: {
         ...trip,
         driverName,
-        vehiclePlate: vehicle?.numberPlate,
-        vehicleColor: vehicle?.color,
+        // Prefer onboarding data on the driver doc; admin vehicles doc as fallback
+        vehiclePlate: driver.vehicleRegistration || vehicle?.numberPlate,
+        vehicleColor: driver.vehicleColor || vehicle?.color,
         vehicleBrand: vehicle?.brand,
         vehicleCapacity: vehicle?.capacity,
         origin: routeData?.origin,
@@ -207,8 +208,9 @@ export function subscribeActiveTripMarkers(
         trip: {
           ...trip,
           driverName,
-          vehiclePlate: vehicle?.numberPlate,
-          vehicleColor: vehicle?.color,
+          // Prefer onboarding data on the driver doc; admin vehicles doc as fallback
+          vehiclePlate: driver.vehicleRegistration || vehicle?.numberPlate,
+          vehicleColor: driver.vehicleColor || vehicle?.color,
           vehicleBrand: vehicle?.brand,
           vehicleCapacity: vehicle?.capacity,
           origin: routeData?.origin,

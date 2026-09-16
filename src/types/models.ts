@@ -78,6 +78,13 @@ export interface Driver {
   currentLocation?: Location;
 
   rating?: number;
+
+  // Vehicle details written at driver onboarding (no separate vehicles doc
+  // exists in this app — the join by vehicleId only serves admin-created
+  // vehicles, which most drivers never have).
+  vehicleRegistration?: string;
+  vehicleColor?: string;
+  vehicleCapacity?: number;
 }
 
 
@@ -154,6 +161,9 @@ export interface ActiveTripMarker {
   trip: Trip;
   driverLocation: Location;
   availableSeats: number;
+  /** Plate + color come from the driver doc (onboarding data) */
+  vehiclePlate?: string;
+  vehicleColor?: string;
 }
 
 

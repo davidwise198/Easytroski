@@ -690,8 +690,8 @@ export default function PassengerMapScreen() {
           </View>
         )}
 
-        {/* ---- Booking status banner ---- */}
-        {lastBookingId && lastBookingStatus && (
+        {/* ---- Booking status banner (hidden once the trip is completed) ---- */}
+        {lastBookingId && lastBookingStatus && lastBookingStatus !== "completed" && (
           <View style={[
             styles.bookingBanner,
             ds.bookingBanner,
@@ -717,7 +717,7 @@ export default function PassengerMapScreen() {
                 ? `Booking ACCEPTED — ${bookingSeats} seat${bookingSeats > 1 ? 's' : ''} reserved.${remainingSeats !== null ? ` ${remainingSeats} seat${remainingSeats !== 1 ? 's' : ''} remaining.` : ''} Your driver is on the way.`
                 : lastBookingStatus === "cancelled"
                   ? cancelledBannerText(cancelledMeta)
-                  : "Waiting for the driver to ACCEPT or REJECT your booking..."}
+                  : "Waiting for the driver to ACCEPT or REJECT your booking…"}
             </AppText>
             {lastBookingStatus === "cancelled" ? (
               <Pressable
