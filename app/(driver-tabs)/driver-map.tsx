@@ -7,12 +7,14 @@ import {
   RefreshControl,
   ScrollView,
   StyleSheet,
+  Vibration,
   View,
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { MapView, MapViewType, Marker, PROVIDER_DEFAULT } from "../../src/components/map/MapExports";
 import * as Location from "expo-location";
 import { router } from "expo-router";
+import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 
 import AuthGate from "../../src/components/AuthGate";
 import AppText from "../../src/components/ui/AppText";
@@ -34,6 +36,8 @@ import { Route, Trip, TripStatus } from "../../src/types/models";
 import { showToast } from "../../src/utils/toast";
 
 // Ghana/Omanjor default center
+const ALERT_SECONDS = 45;
+
 const DEFAULT_REGION = {
   latitude: 5.6037,
   longitude: -0.187,
@@ -134,6 +138,13 @@ export default function DriverMapScreen() {
   const [routedFrom, setRoutedFrom] = useState<{ latitude: number; longitude: number } | null>(null);
   const routeFetchRef = useRef(0);
 
+  // Booking alarm state
+  const [alertBooking, setAlertBooking] = useState<any | null>(null);
+  const [alertSecondsLeft, setAlertSecondsLeft] = useState(ALERT_SECONDS);
+  const seenBookingIdsRef = useRef<Set<string>>(new Set());
+  const alertDismissedIdsRef = useRef<Set<string>>(new Set());
+  const firstLocationFixRef = useRef(false);
+
   // Derived: confirmed bookings drive GPS cadence + the next-pickup nav card
   const confirmedBookings = bookings.filter((b: any) => b.status === "confirmed");
   const nextPickup = confirmedBookings.length > 0 ? confirmedBookings[0] : null;
@@ -142,6 +153,27 @@ export default function DriverMapScreen() {
   // Real-time location tracking for active trips
   const locationSubscriptionRef =
     useRef<Location.LocationSubscription | null>(null);
+
+  // Booking alarm: vibrate + takeover card when a booking we haven't alerted arrives
+  const detectNewBookings = useCallback((updatedBookings: any[]) => {
+    const fresh = updatedBookings.filter(
+      (b: any) =>
+        b.status === "pending" &&
+        b.id &&
+        !seenBookingIdsRef.current.has(b.id) &&
+        !alertDismissedIdsRef.current.has(b.id)
+    );
+    updatedBookings.forEach((b: any) => {
+      if (b.id) seenBookingIdsRef.current.add(b.id);
+    });
+    if (fresh.length === 0) return;
+    const toMillis = (t: any) =>
+      typeof t?.toMillis === "function" ? t.toMillis() : typeof t === "number" ? t : 0;
+    const newest = [...fresh].sort((a, b) => toMillis(b.createdAt) - toMillis(a.createdAt))[0];
+    setAlertBooking(newest);
+    setAlertSecondsLeft(ALERT_SECONDS);
+    Vibration.vibrate([0, 450, 250, 450], true);
+  }, []);
 
   // Load routes
   useEffect(() => {
@@ -184,6 +216,7 @@ export default function DriverMapScreen() {
         setBookings(updatedBookings);
         // Also refresh pickup locations when bookings change
         getDriverPickupLocations(user.uid).then(setPickupLocations).catch(() => {});
+        detectNewBookings(updatedBookings);
       },
       (error) => {
         showToast("error", "Connection problem", "New bookings may not appear. Check your connection.");
@@ -192,7 +225,7 @@ export default function DriverMapScreen() {
     );
 
     return unsubscribe;
-  }, [activeTrip, user?.uid]);
+  }, [activeTrip, user?.uid, detectNewBookings]);
 
   // Location tracking when trip is active
   useEffect(() => {
@@ -239,9 +272,55 @@ export default function DriverMapScreen() {
     };
   }, [activeTrip, user?.uid, hasConfirmedBooking]);
 
-  // Re-center map on user location
+  // Keep the screen awake while a trip is active — a driving driver must never miss a booking
   useEffect(() => {
-    if (location && mapRef.current) {
+    if (activeTrip) {
+      activateKeepAwakeAsync().catch(() => {});
+    } else {
+      deactivateKeepAwake();
+    }
+  }, [activeTrip]);
+
+  // Never leave the vibration running when the screen goes away
+  useEffect(() => {
+    return () => Vibration.cancel();
+  }, []);
+
+  // Alert countdown — after ALERT_SECONDS the card hands the booking back to the list
+  useEffect(() => {
+    if (!alertBooking) return;
+    const interval = setInterval(() => {
+      setAlertSecondsLeft((s) => {
+        if (s <= 1) {
+          clearInterval(interval);
+          Vibration.cancel();
+          if (alertBooking.id) alertDismissedIdsRef.current.add(alertBooking.id);
+          setAlertBooking(null);
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+    return () => clearInterval(interval);
+  }, [alertBooking]);
+
+  // Clear the takeover card if the alerted booking is resolved or withdrawn
+  useEffect(() => {
+    if (!alertBooking) return;
+    const stillPending = bookings.some(
+      (b: any) => b.id === alertBooking.id && b.status === "pending"
+    );
+    if (!stillPending) {
+      Vibration.cancel();
+      if (alertBooking.id) alertDismissedIdsRef.current.add(alertBooking.id);
+      setAlertBooking(null);
+    }
+  }, [bookings, alertBooking]);
+
+  // Center the map once on the first location fix, then leave the camera to the driver
+  useEffect(() => {
+    if (location && mapRef.current && !firstLocationFixRef.current) {
+      firstLocationFixRef.current = true;
       mapRef.current.animateToRegion(
         {
           latitude: location.coords.latitude,
@@ -253,6 +332,21 @@ export default function DriverMapScreen() {
       );
     }
   }, [location]);
+
+  // One-shot camera jump to the new pickup when the takeover card appears
+  useEffect(() => {
+    const pickup = alertBooking?.pickupLocation;
+    if (!pickup?.latitude || !mapRef.current) return;
+    mapRef.current.animateToRegion(
+      {
+        latitude: pickup.latitude,
+        longitude: pickup.longitude,
+        latitudeDelta: 0.03,
+        longitudeDelta: 0.03,
+      },
+      600
+    );
+  }, [alertBooking?.id]);
 
   const handleStartTrip = useCallback(async () => {
     const driverId = user?.uid;
@@ -286,6 +380,10 @@ export default function DriverMapScreen() {
 
   const handleConfirmBooking = useCallback(
     async (bookingId: string) => {
+      if (alertBooking?.id === bookingId) {
+        setAlertBooking(null);
+        Vibration.cancel();
+      }
       const booking = bookings.find((b: any) => b.id === bookingId);
       try {
         await confirmBooking(
@@ -302,11 +400,15 @@ export default function DriverMapScreen() {
         showToast("error", "Failed to confirm", "Please try again.");
       }
     },
-    []
+    [bookings, activeTrip, alertBooking]
   );
 
   const handleRejectBooking = useCallback(
     async (bookingId: string) => {
+      if (alertBooking?.id === bookingId) {
+        setAlertBooking(null);
+        Vibration.cancel();
+      }
       const booking = bookings.find((b: any) => b.id === bookingId);
       try {
         await cancelBooking(
@@ -325,7 +427,7 @@ export default function DriverMapScreen() {
         showToast("error", "Failed to reject", "Please try again.");
       }
     },
-    [user?.uid]
+    [user?.uid, bookings, activeTrip, alertBooking]
   );
 
   const handleCompleteBooking = useCallback(
@@ -401,6 +503,17 @@ export default function DriverMapScreen() {
       : nextPickupDistanceM != null
         ? etaFromDistance(nextPickupDistanceM)
         : null;
+
+  const alertDistanceM =
+    alertBooking?.pickupLocation?.latitude && location
+      ? haversineMeters(
+          { latitude: location.coords.latitude, longitude: location.coords.longitude },
+          {
+            latitude: alertBooking.pickupLocation.latitude,
+            longitude: alertBooking.pickupLocation.longitude,
+          }
+        )
+      : null;
 
   const selectedPickupDistanceM =
     selectedPickup && location
@@ -683,52 +796,81 @@ export default function DriverMapScreen() {
                 ) : (
                   bookings.map((booking: any, index: number) => (
                     <View key={booking.id || index} style={[styles.bookingCard, ds.bookingCard]}>
-                      <View style={[styles.bookingIcon, ds.bookingIcon]}>
-                        <MaterialCommunityIcons name="account" size={16} color={COLORS.primary} />
-                      </View>
-                      <View style={styles.bookingCopy}>
-                        <AppText variant="heading" style={[styles.bookingTitle, ds.bookingTitle]}>
-                          {booking.passengerName || "Passenger"}
-                        </AppText>
-                        <AppText variant="caption" style={[styles.bookingSubtitle, ds.bookingSubtitle]}>
-                          {booking.pickupLocation?.address || "Pickup"} → {booking.dropOffLocation?.address || "Drop-off"}
-                        </AppText>
-                        <View style={styles.bookingStatusRow}>
-                          <View style={[styles.bookingStatusBadge, { backgroundColor: booking.status === "confirmed" ? COLORS.success : booking.status === "cancelled" ? COLORS.danger : booking.status === "completed" ? COLORS.primary : COLORS.warning }]}>
-                            <AppText variant="caption" style={styles.bookingStatusText}>
-                              {booking.status === "confirmed" ? "Confirmed" : booking.status === "cancelled" ? "Rejected" : booking.status === "completed" ? "Dropped off" : "Pending"}
+                      <View style={styles.bookingInfoRow}>
+                        <View style={[styles.bookingIcon, ds.bookingIcon]}>
+                          <MaterialCommunityIcons name="account" size={16} color={COLORS.primary} />
+                        </View>
+                        <View style={styles.bookingCopy}>
+                          <AppText variant="heading" style={[styles.bookingTitle, ds.bookingTitle]}>
+                            {booking.passengerName || "Passenger"}
+                          </AppText>
+                          <AppText variant="caption" style={[styles.bookingSubtitle, ds.bookingSubtitle]}>
+                            {booking.pickupLocation?.address || "Pickup"} → {booking.dropOffLocation?.address || "Drop-off"}
+                          </AppText>
+                          <View style={styles.bookingStatusRow}>
+                            <View
+                              style={[
+                                styles.bookingStatusBadge,
+                                {
+                                  backgroundColor:
+                                    booking.status === "confirmed"
+                                      ? COLORS.success
+                                      : booking.status === "cancelled"
+                                        ? COLORS.danger
+                                        : booking.status === "completed"
+                                          ? COLORS.primary
+                                          : COLORS.warning,
+                                },
+                              ]}
+                            >
+                              <AppText variant="caption" style={styles.bookingStatusText}>
+                                {booking.status === "confirmed"
+                                  ? "Confirmed"
+                                  : booking.status === "cancelled"
+                                    ? "Rejected"
+                                    : booking.status === "completed"
+                                      ? "Dropped off"
+                                      : "Pending"}
+                              </AppText>
+                            </View>
+                            <AppText variant="caption" style={styles.bookingSeatsInline}>
+                              {booking.seats || 1} seat{(booking.seats || 1) > 1 ? "s" : ""}
                             </AppText>
                           </View>
-                          <AppText variant="caption" style={styles.bookingSeatsInline}>
-                            {booking.seats || 1} seat{(booking.seats || 1) > 1 ? "s" : ""}
-                          </AppText>
                         </View>
                       </View>
                       {booking.status === "pending" && (
-                        <View style={styles.bookingActions}>
+                        <View style={styles.bookingActionsWide}>
                           <Pressable
-                            style={styles.confirmButton}
+                            style={({ pressed }) => [styles.rejectBtnWide, pressed && { opacity: 0.85 }]}
+                            onPress={() => void handleRejectBooking(booking.id)}
+                          >
+                            <MaterialCommunityIcons name="close" size={18} color={COLORS.danger} />
+                            <AppText variant="caption" style={styles.rejectBtnWideText}>
+                              Reject
+                            </AppText>
+                          </Pressable>
+                          <Pressable
+                            style={({ pressed }) => [styles.confirmBtnWide, pressed && { opacity: 0.85 }]}
                             onPress={() => void handleConfirmBooking(booking.id)}
                           >
                             <MaterialCommunityIcons name="check" size={18} color={COLORS.white} />
-                          </Pressable>
-                          <Pressable
-                            style={styles.rejectButton}
-                            onPress={() => void handleRejectBooking(booking.id)}
-                          >
-                            <MaterialCommunityIcons name="close" size={18} color={COLORS.white} />
+                            <AppText variant="caption" style={styles.confirmBtnWideText}>
+                              Accept
+                            </AppText>
                           </Pressable>
                         </View>
                       )}
                       {booking.status === "confirmed" && (
-                        <View style={styles.bookingActions}>
-                          <Pressable
-                            style={styles.dropoffButton}
-                            onPress={() => void handleCompleteBooking(booking.id)}
-                          >
-                            <MaterialCommunityIcons name="account-check" size={18} color={COLORS.white} />
-                          </Pressable>
-                        </View>
+                        <Pressable
+                          style={({ pressed }) => [styles.dropoffBtnWide, pressed && { opacity: 0.85 }]}
+                          onPress={() => void handleCompleteBooking(booking.id)}
+                        >
+                          <MaterialCommunityIcons name="account-check" size={18} color={COLORS.white} />
+                          <AppText variant="caption" style={styles.dropoffBtnWideText}>
+                            Picked up
+                          </AppText>
+                        </Pressable>
                       )}
                     </View>
                   ))
@@ -775,6 +917,67 @@ export default function DriverMapScreen() {
                 </View>
               </View>
               <PrimaryButton title="Close" onPress={() => setSelectedPickup(null)} variant="outline" />
+            </View>
+          </View>
+        )}
+
+        {/* ---- New-booking takeover card ---- */}
+        {alertBooking && (
+          <View style={styles.alertOverlay}>
+            <View style={styles.alertCard}>
+              <View style={styles.alertHeader}>
+                <View style={styles.alertIconWrap}>
+                  <MaterialCommunityIcons name="bell-ring-outline" size={22} color={COLORS.white} />
+                </View>
+                <View style={styles.alertCopy}>
+                  <AppText variant="caption" style={styles.alertEyebrow}>
+                    NEW BOOKING
+                  </AppText>
+                  <AppText variant="heading" style={styles.alertTitle}>
+                    {alertBooking.passengerName || "Passenger"}
+                  </AppText>
+                </View>
+                <View style={styles.alertCountdown}>
+                  <AppText variant="heading" style={styles.alertCountdownText}>
+                    {alertSecondsLeft}
+                  </AppText>
+                </View>
+              </View>
+              <View style={styles.alertMeta}>
+                <View style={styles.alertMetaRow}>
+                  <MaterialCommunityIcons name="map-marker-radius" size={16} color={COLORS.warning} />
+                  <AppText variant="caption" style={styles.alertMetaText} numberOfLines={2}>
+                    {alertBooking.pickupLocation?.address || "Pickup point"}
+                  </AppText>
+                </View>
+                <View style={styles.alertMetaRow}>
+                  <MaterialCommunityIcons name="seat-passenger" size={16} color={COLORS.warning} />
+                  <AppText variant="caption" style={styles.alertMetaText}>
+                    {alertBooking.seats || 1} seat{(alertBooking.seats || 1) > 1 ? "s" : ""}
+                    {alertDistanceM != null ? " • " + formatDistance(alertDistanceM) + " away" : ""}
+                  </AppText>
+                </View>
+              </View>
+              <View style={styles.alertActions}>
+                <Pressable
+                  style={({ pressed }) => [styles.alertRejectBtn, pressed && { opacity: 0.85 }]}
+                  onPress={() => void handleRejectBooking(alertBooking.id)}
+                >
+                  <MaterialCommunityIcons name="close" size={22} color={COLORS.danger} />
+                  <AppText variant="body" style={styles.alertRejectText}>
+                    Reject
+                  </AppText>
+                </Pressable>
+                <Pressable
+                  style={({ pressed }) => [styles.alertAcceptBtn, pressed && { opacity: 0.85 }]}
+                  onPress={() => void handleConfirmBooking(alertBooking.id)}
+                >
+                  <MaterialCommunityIcons name="check" size={22} color={COLORS.white} />
+                  <AppText variant="body" style={styles.alertAcceptText}>
+                    Accept
+                  </AppText>
+                </Pressable>
+              </View>
             </View>
           </View>
         )}
@@ -1109,12 +1312,14 @@ const styles = StyleSheet.create({
     marginTop: SPACING.sm,
   },
   bookingCard: {
-    flexDirection: "row",
-    alignItems: "center",
     padding: SPACING.md,
     borderRadius: 14,
     backgroundColor: COLORS.veryLightBlue,
     marginBottom: SPACING.sm,
+  },
+  bookingInfoRow: {
+    flexDirection: "row",
+    alignItems: "center",
   },
   bookingIcon: {
     width: 32,
@@ -1157,33 +1362,54 @@ const styles = StyleSheet.create({
     color: COLORS.textSecondary,
     fontSize: 11,
   },
-  bookingActions: {
+  bookingActionsWide: {
     flexDirection: "row",
-    gap: SPACING.xs,
+    gap: SPACING.sm,
+    marginTop: SPACING.sm,
   },
-  confirmButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
+  rejectBtnWide: {
+    flex: 1,
+    height: 52,
+    borderRadius: 12,
+    borderWidth: 1.5,
+    borderColor: COLORS.danger,
+    backgroundColor: COLORS.white,
     alignItems: "center",
     justifyContent: "center",
+    flexDirection: "row",
+    gap: 6,
+  },
+  rejectBtnWideText: {
+    color: COLORS.danger,
+    fontWeight: "700",
+  },
+  confirmBtnWide: {
+    flex: 1.5,
+    height: 52,
+    borderRadius: 12,
     backgroundColor: COLORS.success,
-  },
-  rejectButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: COLORS.danger,
+    flexDirection: "row",
+    gap: 6,
   },
-  dropoffButton: {
-    width: 34,
-    height: 34,
-    borderRadius: 17,
-    alignItems: "center",
-    justifyContent: "center",
+  confirmBtnWideText: {
+    color: COLORS.white,
+    fontWeight: "700",
+  },
+  dropoffBtnWide: {
+    height: 52,
+    borderRadius: 12,
     backgroundColor: COLORS.primary,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 6,
+    marginTop: SPACING.sm,
+  },
+  dropoffBtnWideText: {
+    color: COLORS.white,
+    fontWeight: "700",
   },
 
   // Pickup detail sheet
@@ -1311,5 +1537,115 @@ const styles = StyleSheet.create({
   },
   endTripButton: {
     marginTop: SPACING.md,
+  },
+
+  // New-booking takeover card
+  alertOverlay: {
+    position: "absolute",
+    left: SPACING.md,
+    right: SPACING.md,
+    bottom: 96,
+  },
+  alertCard: {
+    backgroundColor: COLORS.navy,
+    borderRadius: 20,
+    padding: SPACING.lg,
+    shadowColor: COLORS.navy,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.35,
+    shadowRadius: 16,
+    elevation: 12,
+  },
+  alertHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.md,
+    marginBottom: SPACING.md,
+  },
+  alertIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: COLORS.warning,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  alertCopy: {
+    flex: 1,
+  },
+  alertEyebrow: {
+    color: "rgba(255,255,255,0.7)",
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 1,
+  },
+  alertTitle: {
+    color: COLORS.white,
+    fontSize: 20,
+    lineHeight: 26,
+  },
+  alertCountdown: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 2,
+    borderColor: COLORS.warning,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  alertCountdownText: {
+    color: COLORS.white,
+    fontSize: 18,
+  },
+  alertMeta: {
+    gap: SPACING.xs,
+    backgroundColor: "rgba(255,255,255,0.08)",
+    borderRadius: 12,
+    padding: SPACING.md,
+    marginBottom: SPACING.md,
+  },
+  alertMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+  },
+  alertMetaText: {
+    color: "rgba(255,255,255,0.85)",
+    flex: 1,
+  },
+  alertActions: {
+    flexDirection: "row",
+    gap: SPACING.sm,
+  },
+  alertRejectBtn: {
+    flex: 1,
+    height: 56,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: COLORS.danger,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 6,
+  },
+  alertRejectText: {
+    color: COLORS.danger,
+    fontWeight: "800",
+    fontSize: 16,
+  },
+  alertAcceptBtn: {
+    flex: 1.4,
+    height: 56,
+    borderRadius: 14,
+    backgroundColor: COLORS.success,
+    alignItems: "center",
+    justifyContent: "center",
+    flexDirection: "row",
+    gap: 6,
+  },
+  alertAcceptText: {
+    color: COLORS.white,
+    fontWeight: "800",
+    fontSize: 16,
   },
 });

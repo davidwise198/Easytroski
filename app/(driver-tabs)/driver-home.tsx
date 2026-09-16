@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
@@ -13,6 +13,7 @@ import {
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { router } from "expo-router";
+import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
 
 import AppBackground from "../../src/components/ui/AppBackground";
 import AppText from "../../src/components/ui/AppText";
@@ -20,8 +21,6 @@ import PrimaryButton from "../../src/components/ui/PrimaryButton";
 import AuthGate from "../../src/components/AuthGate";
 import { useAuth } from "../../src/contexts/AuthContext";
 import { useThemeColors } from "../../src/contexts/ThemeContext";
-import { useMemo } from "react";
-import ThemeToggle from "../../src/components/ui/ThemeToggle";
 import {
   getActiveRoutes,
   getDriverActiveTrip,
@@ -35,48 +34,6 @@ import { getUserProfile, getPhotoURL } from "../../src/services/profile";
 import { COLORS, SPACING } from "../../src/theme";
 import { Route, Trip } from "../../src/types/models";
 import { showToast } from "../../src/utils/toast";
-
-// ---------------------------------------------------------------------------
-// Animated entrance wrapper
-// ---------------------------------------------------------------------------
-
-function FadeSlideIn({
-  children,
-  delay = 0,
-  style,
-}: {
-  children: React.ReactNode;
-  delay?: number;
-  style?: any;
-}) {
-  const opacity = useRef(new Animated.Value(0)).current;
-  const translateY = useRef(new Animated.Value(24)).current;
-
-  useEffect(() => {
-    Animated.parallel([
-      Animated.timing(opacity, {
-        toValue: 1,
-        duration: 400,
-        delay,
-        easing: Easing.out(Easing.cubic),
-        useNativeDriver: true,
-      }),
-      Animated.timing(translateY, {
-        toValue: 0,
-        duration: 400,
-        delay,
-        easing: Easing.out(Easing.bezier(0.34, 1.56, 0.64, 1)),
-        useNativeDriver: true,
-      }),
-    ]).start();
-  }, [delay, opacity, translateY]);
-
-  return (
-    <Animated.View style={[{ opacity, transform: [{ translateY }] }, style]}>
-      {children}
-    </Animated.View>
-  );
-}
 
 // ---------------------------------------------------------------------------
 // Pulse dot for online status
@@ -139,35 +96,28 @@ function PulseDot({ color }: { color: string }) {
 }
 
 // ---------------------------------------------------------------------------
-// Main driver dashboard
+// Main driver dashboard — cockpit mode
 // ---------------------------------------------------------------------------
 
 export default function DriverDashboardScreen() {
-  const { user, signOut } = useAuth();
+  const { user } = useAuth();
   const { colors } = useThemeColors();
-  const ds = useMemo(() => ({
-    title: { color: colors.text },
-    driverName: { color: colors.text },
-    statusTitle: { color: "#FFFFFF" },
-    tileLabel: { color: colors.text },
-    sectionTitle: { color: colors.text },
-    routeTitle: { color: colors.text },
-    routeDest: { color: colors.textSecondary },
-    seatCounterLabel: { color: colors.text },
-    seatCountText: { color: colors.text },
-    activeTripTitle: { color: colors.text },
-    activeTripSubtitle: { color: colors.textSecondary },
-    emptyText: { color: colors.textSecondary },
-    emptyHint: { color: colors.textSecondary },
-    footerLinkText: { color: colors.textSecondary },
-    tile: { backgroundColor: colors.glass, borderColor: colors.glassBorder },
-    tileIconWrap: { backgroundColor: 'transparent' },
-    seatBtn: { backgroundColor: colors.white, borderColor: colors.veryLightBlue },
-    seatCounterCard: { backgroundColor: colors.blueWash, borderColor: colors.veryLightBlue },
-    routeRow: { backgroundColor: colors.veryLightBlue + 'BC' },
-    selectedRoute: { borderColor: colors.primary, backgroundColor: colors.blueWash },
-    driverIcon: { backgroundColor: colors.surface, borderColor: colors.glassBorder },
-  }), [colors]);
+  const ds = useMemo(
+    () => ({
+      text: { color: colors.text },
+      secondary: { color: colors.textSecondary },
+      statusTitle: { color: "#FFFFFF" },
+      statusPanel: { backgroundColor: "#102A43" },
+      statusPanelOnline: { backgroundColor: "#0D3320" },
+      routeRow: { backgroundColor: colors.veryLightBlue + "BC" },
+      selectedRoute: { borderColor: COLORS.primary, backgroundColor: colors.blueWash },
+      seatCounterCard: { backgroundColor: colors.blueWash, borderColor: colors.veryLightBlue },
+      seatBtn: { backgroundColor: colors.white, borderColor: colors.veryLightBlue },
+      driverIcon: { backgroundColor: colors.blueWash },
+    }),
+    [colors]
+  );
+
   const [routes, setRoutes] = useState<Route[]>([]);
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
   const [online, setOnline] = useState(false);
@@ -211,7 +161,17 @@ export default function DriverDashboardScreen() {
       })
       .catch((error) => console.error("Driver route loading error:", error))
       .finally(() => setLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // Keep the screen awake while online — a driver mid-trip must never miss a booking.
+  useEffect(() => {
+    if (online) {
+      activateKeepAwakeAsync().catch(() => {});
+    } else {
+      deactivateKeepAwake();
+    }
+  }, [online]);
 
   // Location tracking when online
   useEffect(() => {
@@ -336,10 +296,6 @@ export default function DriverDashboardScreen() {
     }
   };
 
-  const handleSignOut = async () => {
-    await signOut();
-  };
-
   const displayName =
     profile?.name || user?.displayName || user?.email?.split("@")[0] || "Driver";
   const photoURL = getPhotoURL(user, profile);
@@ -351,271 +307,168 @@ export default function DriverDashboardScreen() {
           contentContainerStyle={styles.content}
           showsVerticalScrollIndicator={false}
         >
-          {/* ─── Header ─── */}
-          <FadeSlideIn delay={0}>
-            <View style={styles.headerRow}>
-              <View style={{ flex: 1 }}>
-                <AppText variant="caption" style={styles.eyebrow}>
-                  DRIVER CONTROL
-                </AppText>
-                <AppText variant="title" style={[styles.title, ds.title]}>
-                  Ready to move?
-                </AppText>
-                <AppText variant="heading" style={[styles.driverName, ds.driverName]}>
-                  {displayName}
-                </AppText>
-              </View>
-              <View style={styles.headerRight}>
-                <ThemeToggle />
-                <Pressable
-                  onPress={() => router.push("/profile")}
-                  style={({ pressed }) => [pressed && { opacity: 0.7 }]}
-                >
-                  <View style={[styles.driverIcon, ds.driverIcon]}>
-                    {photoURL ? (
-                      <Image source={{ uri: photoURL }} style={styles.driverPhoto} resizeMode="cover" />
-                    ) : (
-                      <MaterialCommunityIcons
-                        name="account"
-                        size={25}
-                        color={colors.primary}
-                      />
-                    )}
-                  </View>
-                </Pressable>
-              </View>
+          {/* ─── Status header ─── */}
+          <View style={styles.headerRow}>
+            <View style={styles.statusCopy}>
+              {online && <PulseDot color={COLORS.success} />}
+              <AppText variant="heading" style={[styles.driverName, ds.text]}>
+                {displayName}
+              </AppText>
             </View>
-          </FadeSlideIn>
-
-          {/* ─── Status panel ─── */}
-          <FadeSlideIn delay={100}>
-            <View
-              style={[
-                styles.statusPanel,
-                online && styles.statusPanelOnline,
-              ]}
+            <Pressable
+              onPress={() => router.push("/profile")}
+              style={({ pressed }) => [pressed && { opacity: 0.7 }]}
             >
-              <View style={styles.statusCopy}>
-                <View style={styles.statusTitleRow}>
-                  {online && <PulseDot color={COLORS.success} />}
-                  <AppText variant="heading" style={[styles.statusTitle, ds.statusTitle]}>
-                    {activeTrip
-                      ? "Trip active"
-                      : online
-                        ? "You are online"
-                        : "You are offline"}
-                  </AppText>
-                </View>
-                <AppText variant="caption" style={styles.statusText}>
-                  {activeTrip
-                    ? "Passengers can see your trip on the map."
-                    : online
-                      ? "Passengers can find your active trip."
-                      : "Go online when you are ready to drive."}
-                </AppText>
+              <View style={[styles.driverIcon, ds.driverIcon]}>
+                {photoURL ? (
+                  <Image source={{ uri: photoURL }} style={styles.driverPhoto} resizeMode="cover" />
+                ) : (
+                  <MaterialCommunityIcons name="account" size={24} color={colors.primary} />
+                )}
               </View>
-              {!activeTrip && (
-                <Switch
-                  value={online}
-                  onValueChange={(v) => void handleAvailability(v)}
-                  trackColor={{ false: "#4A5568", true: COLORS.success }}
-                  thumbColor={COLORS.white}
-                />
-              )}
+            </Pressable>
+          </View>
+
+          {/* ─── Status panel + online switch ─── */}
+          <View style={[styles.statusPanel, ds.statusPanel, online && ds.statusPanelOnline]}>
+            <View style={styles.statusCopy}>
+              <AppText variant="heading" style={[styles.statusTitle, ds.statusTitle]}>
+                {activeTrip ? "Trip active" : online ? "You are online" : "You are offline"}
+              </AppText>
+              <AppText variant="caption" style={styles.statusText}>
+                {activeTrip
+                  ? "Passengers can see your trip on the map."
+                  : online
+                    ? "Passengers can find your active trip."
+                    : "Go online when you are ready to drive."}
+              </AppText>
             </View>
-          </FadeSlideIn>
+            {!activeTrip && (
+              <Switch
+                value={online}
+                onValueChange={(v) => void handleAvailability(v)}
+                trackColor={{ false: "#4A5568", true: COLORS.success }}
+                thumbColor={COLORS.white}
+              />
+            )}
+          </View>
 
-          {/* ─── Active trip card ─── */}
+          {/* ─── Active trip quick actions ─── */}
           {activeTrip && (
-            <FadeSlideIn delay={150}>
-              <View style={styles.activeTripCard}>
-                <View style={styles.activeTripIcon}>
-                  <MaterialCommunityIcons
-                    name="bus"
-                    size={24}
-                    color={COLORS.primary}
-                  />
-                </View>
-                <View style={styles.activeTripCopy}>
-                  <AppText variant="heading" style={[styles.activeTripTitle, ds.activeTripTitle]}>
-                    Active trip
-                  </AppText>
-                  <AppText variant="caption" style={[styles.activeTripSubtitle, ds.activeTripSubtitle]}>
-                    Started{" "}
-                    {activeTrip.startTime
-                      ? new Date(activeTrip.startTime).toLocaleTimeString([], {
-                          hour: "2-digit",
-                          minute: "2-digit",
-                        })
-                      : "just now"}
-                  </AppText>
-                </View>
-                <PrimaryButton
-                  title={ending ? "..." : "End"}
-                  onPress={() => void handleEndTrip()}
-                  disabled={ending}
-                  style={styles.endTripBtn}
-                />
-              </View>
-            </FadeSlideIn>
-          )}
-
-          {/* ─── Quick action tiles ─── */}
-          <FadeSlideIn delay={200} style={{ marginBottom: SPACING.lg }}>
-            <View style={styles.tilesGrid}>
+            <View style={styles.activeTripRow}>
               <Pressable
-                style={({ pressed }) => [[styles.tile, ds.tile], pressed && styles.tilePressed]}
+                style={({ pressed }) => [styles.activeTripBtn, pressed && { opacity: 0.7 }]}
                 onPress={() => router.navigate("/driver-map")}
               >
-                <View style={[styles.tileIconWrap, { backgroundColor: COLORS.primary + "18" }]}>
-                  <MaterialCommunityIcons
-                    name="map"
-                    size={22}
-                    color={COLORS.primary}
-                  />
-                </View>
-                <AppText variant="caption" style={[styles.tileLabel, ds.tileLabel]}>
-                  View map
+                <MaterialCommunityIcons name="map" size={20} color={COLORS.primary} />
+                <AppText variant="body" style={[styles.activeTripBtnText, ds.text]}>
+                  Open map
                 </AppText>
               </Pressable>
-
               <Pressable
-                style={({ pressed }) => [[styles.tile, ds.tile], pressed && styles.tilePressed]}
-                onPress={() => router.navigate("/driver-trips")}
+                style={({ pressed }) => [styles.activeTripBtn, styles.activeTripBtnEnd, pressed && { opacity: 0.7 }]}
+                onPress={() => void handleEndTrip()}
+                disabled={ending}
               >
-                <View style={[styles.tileIconWrap, { backgroundColor: COLORS.accent + "18" }]}>
-                  <MaterialCommunityIcons
-                    name="history"
-                    size={22}
-                    color={COLORS.accent}
-                  />
-                </View>
-                <AppText variant="caption" style={[styles.tileLabel, ds.tileLabel]}>
-                  Trip history
+                <MaterialCommunityIcons name="stop-circle-outline" size={20} color={COLORS.white} />
+                <AppText variant="body" style={styles.activeTripBtnEndText}>
+                  {ending ? "Ending..." : "End trip"}
                 </AppText>
               </Pressable>
             </View>
-          </FadeSlideIn>
+          )}
 
           {/* ─── Routes ─── */}
-          <FadeSlideIn delay={280}>
-            <AppText variant="heading" style={[styles.sectionTitle, ds.sectionTitle]}>
-              {activeTrip ? "Current route" : "Choose your route"}
-            </AppText>
-          </FadeSlideIn>
-
-          <FadeSlideIn delay={320}>
-            {loading ? (
-              <ActivityIndicator
-                color={COLORS.primary}
-                style={{ marginVertical: SPACING.xl }}
+          <AppText variant="caption" style={[styles.sectionLabel, ds.secondary]}>
+            {activeTrip ? "CURRENT ROUTE" : "CHOOSE YOUR ROUTE"}
+          </AppText>
+          {loading ? (
+            <ActivityIndicator color={COLORS.primary} style={{ marginVertical: SPACING.lg }} />
+          ) : routes.length === 0 ? (
+            <View style={styles.emptyState}>
+              <MaterialCommunityIcons
+                name="map-marker-off-outline"
+                size={36}
+                color={colors.textSecondary}
               />
-            ) : routes.length === 0 ? (
-              <View style={styles.emptyState}>
-                <MaterialCommunityIcons
-                  name="map-marker-off-outline"
-                  size={38}
-                  color={COLORS.textSecondary}
-                />
-                <AppText variant="body" style={[styles.emptyText, ds.emptyText]}>
-                  No routes available yet.
-                </AppText>
-                <AppText variant="caption" style={[styles.emptyHint, ds.emptyHint]}>
-                  Contact an admin to add routes.
-                </AppText>
-              </View>
-            ) : (
-              <View style={styles.routeList}>
-                {routes.map((route) => (
-                  <Pressable
-                    key={route.id}
-                    style={[
-                      [styles.routeRow, ds.routeRow],
-                      route.id === selectedRouteId && [styles.selectedRoute, ds.selectedRoute],
-                    ]}
-                    onPress={() => setSelectedRouteId(route.id)}
-                  >
-                    <View style={styles.routeRadio}>
-                      <View
-                        style={[
-                          styles.routeRadioInner,
-                          route.id === selectedRouteId && styles.routeRadioActive,
-                        ]}
-                      />
-                    </View>
-                    <View style={styles.routeCopy}>
-                      <AppText variant="heading" style={[styles.routeTitle, ds.routeTitle]}>
-                        {route.origin}
-                      </AppText>
-                      <AppText variant="caption" style={[styles.routeDest, ds.routeDest]}>
-                        → {route.destination}
-                        {route.stops?.length ? ` (${route.stops.length} stops)` : ""}
-                      </AppText>
-                    </View>
-                  </Pressable>
-                ))}
-              </View>
-            )}
-          </FadeSlideIn>
+              <AppText variant="body" style={[styles.emptyText, ds.secondary]}>
+                No routes available yet.
+              </AppText>
+              <AppText variant="caption" style={[styles.emptyHint, ds.secondary]}>
+                Contact an admin to add routes.
+              </AppText>
+            </View>
+          ) : (
+            <View style={styles.routeList}>
+              {routes.map((route) => (
+                <Pressable
+                  key={route.id}
+                  style={[
+                    [styles.routeRow, ds.routeRow],
+                    route.id === selectedRouteId && [styles.selectedRoute, ds.selectedRoute],
+                  ]}
+                  onPress={() => setSelectedRouteId(route.id)}
+                >
+                  <View style={styles.routeRadio}>
+                    <View
+                      style={[
+                        styles.routeRadioInner,
+                        route.id === selectedRouteId && styles.routeRadioActive,
+                      ]}
+                    />
+                  </View>
+                  <View style={styles.routeCopy}>
+                    <AppText variant="heading" style={[styles.routeTitle, ds.text]}>
+                      {route.origin}
+                    </AppText>
+                    <AppText variant="caption" style={[styles.routeDest, ds.secondary]}>
+                      → {route.destination}
+                      {route.stops?.length ? ` (${route.stops.length} stops)` : ""}
+                    </AppText>
+                  </View>
+                </Pressable>
+              ))}
+            </View>
+          )}
 
           {/* ─── Seat counter ─── */}
           {!activeTrip && (
-            <FadeSlideIn delay={360}>
-              <View style={[styles.seatCounterCard, ds.seatCounterCard]}>
-                <View style={styles.seatCounterLeft}>
-                  <MaterialCommunityIcons name="seat" size={20} color={COLORS.primary} />
-                  <AppText variant="heading" style={[styles.seatCounterLabel, ds.seatCounterLabel]}>Available seats</AppText>
-                </View>
-                <View style={styles.seatCounterControls}>
-                  <Pressable
-                    style={[styles.seatBtn, ds.seatBtn]}
-                    onPress={() => void handleUpdateSeats(seatCount - 1)}
-                  >
-                    <MaterialCommunityIcons name="minus" size={18} color={COLORS.primary} />
-                  </Pressable>
-                  <AppText variant="heading" style={[styles.seatCountText, ds.seatCountText]}>{seatCount}</AppText>
-                  <Pressable
-                    style={[styles.seatBtn, ds.seatBtn]}
-                    onPress={() => void handleUpdateSeats(seatCount + 1)}
-                  >
-                    <MaterialCommunityIcons name="plus" size={18} color={COLORS.primary} />
-                  </Pressable>
-                </View>
+            <View style={[styles.seatCounterCard, ds.seatCounterCard]}>
+              <View style={styles.seatCounterLeft}>
+                <MaterialCommunityIcons name="seat" size={20} color={COLORS.primary} />
+                <AppText variant="heading" style={[styles.seatCounterLabel, ds.text]}>
+                  Available seats
+                </AppText>
               </View>
-            </FadeSlideIn>
+              <View style={styles.seatCounterControls}>
+                <Pressable
+                  style={[styles.seatBtn, ds.seatBtn]}
+                  onPress={() => void handleUpdateSeats(seatCount - 1)}
+                >
+                  <MaterialCommunityIcons name="minus" size={18} color={COLORS.primary} />
+                </Pressable>
+                <AppText variant="heading" style={[styles.seatCountText, ds.text]}>
+                  {seatCount}
+                </AppText>
+                <Pressable
+                  style={[styles.seatBtn, ds.seatBtn]}
+                  onPress={() => void handleUpdateSeats(seatCount + 1)}
+                >
+                  <MaterialCommunityIcons name="plus" size={18} color={COLORS.primary} />
+                </Pressable>
+              </View>
+            </View>
           )}
 
-          {/* ─── Start trip button ─── */}
-          <FadeSlideIn delay={380}>
-            {!activeTrip && (
-              <PrimaryButton
-                title={starting ? "Starting..." : "Start trip"}
-                onPress={() => void handleStartTrip()}
-                disabled={starting || !selectedRouteId}
-                style={styles.startButton}
-              />
-            )}
-          </FadeSlideIn>
-
-          {/* ─── Footer links ─── */}
-          <FadeSlideIn delay={420}>
-            <Pressable
-              style={({ pressed }) => [
-                styles.signOutBtn,
-                pressed && { opacity: 0.5 },
-              ]}
-              onPress={() => void handleSignOut()}
-            >
-              <MaterialCommunityIcons
-                name="logout"
-                size={18}
-                color={COLORS.danger}
-              />
-              <AppText variant="caption" style={styles.signOutText}>
-                Sign out
-              </AppText>
-            </Pressable>
-          </FadeSlideIn>
+          {/* ─── Giant start trip button ─── */}
+          {!activeTrip && (
+            <PrimaryButton
+              title={starting ? "Starting..." : "Start trip"}
+              onPress={() => void handleStartTrip()}
+              disabled={starting || !selectedRouteId}
+              style={styles.startButton}
+            />
+          )}
         </ScrollView>
       </AppBackground>
     </AuthGate>
@@ -630,63 +483,42 @@ const styles = StyleSheet.create({
   content: {
     paddingHorizontal: SPACING.lg,
     paddingTop: SPACING.xl,
-    paddingBottom: 180,
+    paddingBottom: 120,
   },
 
   /* ── Header ── */
   headerRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-start",
-    marginBottom: SPACING.xl,
+    alignItems: "center",
+    marginBottom: SPACING.lg,
   },
-  headerRight: {
-    alignItems: "flex-end",
-    gap: 8,
+  statusCopy: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+    flex: 1,
   },
-  eyebrow: {
-    color: COLORS.primary,
-    fontSize: 10,
-    fontWeight: "800",
-    letterSpacing: 1.1,
-    marginBottom: SPACING.xs,
-  },
-  title: { color: COLORS.navy, fontSize: 30, lineHeight: 38 },
-  driverName: {
-    color: COLORS.navy,
-    fontSize: 22,
-    lineHeight: 28,
-    marginTop: SPACING.xs,
-  },
+  driverName: { fontSize: 22, lineHeight: 28 },
   driverIcon: {
-    width: 52,
-    height: 52,
-    borderRadius: 18,
+    width: 46,
+    height: 46,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: COLORS.blueWash,
     overflow: "hidden",
   },
-  driverPhoto: { width: 52, height: 52, borderRadius: 18 },
+  driverPhoto: { width: 46, height: 46, borderRadius: 16 },
 
   /* ── Status panel ── */
   statusPanel: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: SPACING.md,
+    padding: SPACING.lg,
     borderRadius: 20,
     backgroundColor: "#102A43",
-    marginBottom: SPACING.xl,
-  },
-  statusPanelOnline: {
-    backgroundColor: "#0D3320",
-  },
-  statusCopy: { flex: 1, paddingRight: SPACING.md },
-  statusTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: SPACING.sm,
+    marginBottom: SPACING.lg,
   },
   statusTitle: { color: "#FFFFFF", fontSize: 18, lineHeight: 24 },
   statusText: {
@@ -713,72 +545,43 @@ const styles = StyleSheet.create({
     borderRadius: 4,
   },
 
-  /* ── Active trip ── */
-  activeTripCard: {
+  /* ── Active trip quick actions ── */
+  activeTripRow: {
+    flexDirection: "row",
+    gap: SPACING.sm,
+    marginBottom: SPACING.lg,
+  },
+  activeTripBtn: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    padding: SPACING.md,
-    borderRadius: 18,
+    justifyContent: "center",
+    gap: SPACING.xs,
+    paddingVertical: SPACING.md,
+    borderRadius: 16,
     backgroundColor: COLORS.blueWash,
     borderWidth: 1,
     borderColor: COLORS.primary,
-    marginBottom: SPACING.xl,
   },
-  activeTripIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    backgroundColor: COLORS.white,
-    marginRight: SPACING.md,
+  activeTripBtnText: { color: COLORS.primary, fontWeight: "700" },
+  activeTripBtnEnd: {
+    backgroundColor: COLORS.danger,
+    borderColor: COLORS.danger,
   },
-  activeTripCopy: { flex: 1 },
-  activeTripTitle: { color: COLORS.navy, fontSize: 16 },
-  activeTripSubtitle: { color: COLORS.textSecondary, marginTop: 2 },
-  endTripBtn: {
-    height: 38,
-    borderRadius: 19,
-    paddingHorizontal: SPACING.md,
-  },
-
-  /* ── Tiles ── */
-  tilesGrid: {
-    flexDirection: "row",
-    gap: SPACING.sm,
-  },
-  tile: {
-    flex: 1,
-    alignItems: "center",
-    padding: SPACING.md,
-    borderRadius: 18,
-    backgroundColor: COLORS.glass,
-    borderWidth: 1,
-    borderColor: COLORS.glassBorder,
-  },
-  tilePressed: { transform: [{ scale: 0.95 }], opacity: 0.85 },
-  tileIconWrap: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: SPACING.sm,
-  },
-  tileLabel: { color: COLORS.navy, fontWeight: "700", fontSize: 13 },
+  activeTripBtnEndText: { color: COLORS.white, fontWeight: "700" },
 
   /* ── Routes ── */
-  sectionTitle: {
-    color: COLORS.navy,
-    fontSize: 19,
-    lineHeight: 25,
-    marginBottom: SPACING.md,
+  sectionLabel: {
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 1.1,
+    marginBottom: SPACING.sm,
   },
   routeList: { gap: SPACING.sm },
   routeRow: {
     flexDirection: "row",
     alignItems: "center",
-    padding: SPACING.md,
+    padding: SPACING.lg,
     borderRadius: 18,
     backgroundColor: "rgba(232,243,255,0.72)",
     borderWidth: 1.5,
@@ -786,7 +589,6 @@ const styles = StyleSheet.create({
   },
   selectedRoute: {
     borderColor: COLORS.primary,
-    backgroundColor: COLORS.blueWash,
   },
   routeRadio: {
     width: 20,
@@ -811,35 +613,30 @@ const styles = StyleSheet.create({
     borderColor: COLORS.primary,
   },
   routeCopy: { flex: 1 },
-  routeTitle: { color: COLORS.navy, fontSize: 16, lineHeight: 21 },
-  routeDest: { color: COLORS.textSecondary, marginTop: 2 },
+  routeTitle: { fontSize: 16, lineHeight: 21 },
+  routeDest: { marginTop: 2 },
 
   emptyState: { alignItems: "center", padding: SPACING.xl },
   emptyText: {
-    color: COLORS.textSecondary,
     textAlign: "center",
     marginTop: SPACING.sm,
   },
   emptyHint: {
-    color: COLORS.textSecondary,
     textAlign: "center",
     marginTop: SPACING.xs,
     opacity: 0.6,
     fontSize: 12,
   },
 
-  startButton: { marginTop: SPACING.lg, marginBottom: SPACING.md },
-
   /* ── Seat counter ── */
   seatCounterCard: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: SPACING.md,
+    padding: SPACING.lg,
     borderRadius: 18,
-    backgroundColor: COLORS.blueWash,
     borderWidth: 1,
-    borderColor: COLORS.veryLightBlue,
+    marginTop: SPACING.lg,
     marginBottom: SPACING.sm,
   },
   seatCounterLeft: {
@@ -848,7 +645,6 @@ const styles = StyleSheet.create({
     gap: SPACING.sm,
   },
   seatCounterLabel: {
-    color: COLORS.navy,
     fontSize: 15,
   },
   seatCounterControls: {
@@ -857,41 +653,23 @@ const styles = StyleSheet.create({
     gap: SPACING.md,
   },
   seatBtn: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: COLORS.white,
     borderWidth: 1,
-    borderColor: COLORS.veryLightBlue,
   },
   seatCountText: {
-    color: COLORS.navy,
     fontSize: 24,
     minWidth: 36,
     textAlign: "center",
   },
 
-  /* ── Footer ── */
-  footerLink: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: SPACING.xs,
-    paddingVertical: SPACING.sm,
+  /* ── Start button ── */
+  startButton: {
+    marginTop: SPACING.md,
+    height: 60,
+    borderRadius: 18,
   },
-  footerLinkText: { color: COLORS.textSecondary },
-  signOutBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: SPACING.sm,
-    paddingVertical: SPACING.md,
-    marginTop: SPACING.sm,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: COLORS.danger + "30",
-  },
-  signOutText: { color: COLORS.danger, fontWeight: "600" },
 });
