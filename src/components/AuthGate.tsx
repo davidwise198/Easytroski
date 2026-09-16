@@ -23,6 +23,16 @@ export default function AuthGate({ children, allowedRoles }: AuthGateProps) {
       return;
     }
 
+    // Password accounts must verify their mailbox before using the app.
+    // Google accounts are verified by Google itself, so they skip this.
+    const isPasswordAccount = user.providerData.some(
+      (p) => p?.providerId === "password"
+    );
+    if (isPasswordAccount && user.emailVerified === false) {
+      router.replace("/auth/verify-email");
+      return;
+    }
+
     if (!userRole) {
       router.replace("/auth/role-selection");
       return;
@@ -47,7 +57,17 @@ export default function AuthGate({ children, allowedRoles }: AuthGateProps) {
   }
 
   // While navigation is in progress, show a loader
-  if (!user || !userRole || (allowedRoles && !allowedRoles.includes(userRole))) {
+  const isPasswordAccount = user?.providerData.some(
+    (p) => p?.providerId === "password"
+  );
+  const needsVerification =
+    !!user && isPasswordAccount && user.emailVerified === false;
+  if (
+    !user ||
+    !userRole ||
+    needsVerification ||
+    (allowedRoles && !allowedRoles.includes(userRole))
+  ) {
     return (
       <View style={[styles.loader, { backgroundColor: colors.background }]}>
         <ActivityIndicator size="large" color={colors.primary} />

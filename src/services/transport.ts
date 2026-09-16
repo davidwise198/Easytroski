@@ -164,9 +164,53 @@ export const startTrip = async (
     startTime: new Date().toISOString(),
   });
 
+  // First route a driver ever runs becomes their locked default —
+  // afterwards it can only be changed from Profile settings.
+  try {
+    const driverDoc = await getDoc(doc(db, "drivers", driverId));
+    if (driverDoc.exists() && !driverDoc.data().defaultRouteId) {
+      await updateDoc(doc(db, "drivers", driverId), {
+        defaultRouteId: routeId,
+        updatedAt: serverTimestamp(),
+      });
+    }
+  } catch {
+    // Best-effort — never fail a trip start over the default-route save.
+  }
+
   // Set driver online with full seat capacity
   await setDriverAvailability(driverId, true, capacity);
   return tripReference.id;
+};
+
+/**
+ * The driver's saved default route id (null when they haven't run a trip yet).
+ */
+export const getDriverDefaultRoute = async (
+  driverId: string
+): Promise<string | null> => {
+  try {
+    const driverDoc = await getDoc(doc(db, "drivers", driverId));
+    return driverDoc.exists()
+      ? ((driverDoc.data().defaultRouteId as string) || null)
+      : null;
+  } catch {
+    return null;
+  }
+};
+
+/**
+ * Change the driver's default route. Only exposed on the Profile screen —
+ * the driver home and map treat the default as locked.
+ */
+export const updateDriverDefaultRoute = async (
+  driverId: string,
+  routeId: string
+) => {
+  await updateDoc(doc(db, "drivers", driverId), {
+    defaultRouteId: routeId,
+    updatedAt: serverTimestamp(),
+  });
 };
 
 // ---------------------------------------------------------------------------

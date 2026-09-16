@@ -27,6 +27,12 @@ import {
   updateDisplayName,
 } from "../src/services/profile";
 import { COLORS, SPACING } from "../src/theme";
+import { Route } from "../src/types/models";
+import {
+  getActiveRoutes,
+  getDriverDefaultRoute,
+  updateDriverDefaultRoute,
+} from "../src/services/transport";
 import { showToast } from "../src/utils/toast";
 
 export default function ProfileScreen() {
@@ -47,6 +53,9 @@ export default function ProfileScreen() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [editingName, setEditingName] = useState(false);
+  const [driverRoutes, setDriverRoutes] = useState<Route[]>([]);
+  const [defaultRouteId, setDefaultRouteId] = useState<string | null>(null);
+  const [savingRoute, setSavingRoute] = useState(false);
   const [name, setName] = useState("");
 
   useEffect(() => {
@@ -60,6 +69,21 @@ export default function ProfileScreen() {
         .finally(() => setLoading(false));
     }
   }, [user?.uid]);
+
+  // Drivers: load routes + the saved default for the default-route card
+  useEffect(() => {
+    const uid = user?.uid;
+    if (profile?.role !== "driver" || !uid) return;
+    getActiveRoutes()
+      .then((rs) => {
+        setDriverRoutes(rs);
+        return getDriverDefaultRoute(uid);
+      })
+      .then((id) => {
+        if (id) setDefaultRouteId(id);
+      })
+      .catch(() => {});
+  }, [profile?.role, user?.uid]);
 
   const photoURL = getPhotoURL(user, profile);
   const isGoogleUser = Boolean(user?.photoURL);
@@ -116,6 +140,20 @@ export default function ProfileScreen() {
         },
       },
     ]);
+  };
+
+  const handleSetDefaultRoute = async (routeId: string) => {
+    if (!user?.uid || savingRoute) return;
+    setSavingRoute(true);
+    try {
+      await updateDriverDefaultRoute(user.uid, routeId);
+      setDefaultRouteId(routeId);
+      showToast("success", "Default route updated", "Your driver map will use this route.");
+    } catch {
+      showToast("error", "Update failed", "Could not change your default route.");
+    } finally {
+      setSavingRoute(false);
+    }
   };
 
   const handleSaveName = async () => {
@@ -260,6 +298,51 @@ export default function ProfileScreen() {
           </View>
         </View>
 
+        {/* Default route — drivers only; the only place it can change */}
+        {profile?.role === "driver" && (
+          <View style={[styles.fieldCard, ds.fieldCard]}>
+            <View style={styles.fieldHeader}>
+              <AppText variant="heading" style={[styles.fieldLabel, ds.fieldLabel]}>
+                Default route
+              </AppText>
+              <AppText variant="caption" style={[styles.routeHint, ds.fieldValue]}>
+                {savingRoute ? "Saving..." : "Used on your driver map"}
+              </AppText>
+            </View>
+            {driverRoutes.length === 0 ? (
+              <AppText variant="body" style={[styles.fieldValue, ds.fieldValue]}>
+                No routes available yet.
+              </AppText>
+            ) : (
+              <View style={styles.routeChipWrap}>
+                {driverRoutes.map((route) => {
+                  const active = route.id === defaultRouteId;
+                  return (
+                    <Pressable
+                      key={route.id}
+                      disabled={savingRoute}
+                      style={[styles.routeChip, active && styles.routeChipActive]}
+                      onPress={() => void handleSetDefaultRoute(route.id)}
+                    >
+                      <MaterialCommunityIcons
+                        name={active ? "lock" : "map-marker-path"}
+                        size={13}
+                        color={active ? COLORS.white : colors.primary}
+                      />
+                      <AppText
+                        variant="caption"
+                        style={[styles.routeChipText, active && styles.routeChipTextActive]}
+                      >
+                        {route.origin} → {route.destination}
+                      </AppText>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            )}
+          </View>
+        )}
+
         {/* Sign up method */}
         <View style={[styles.fieldCard, ds.fieldCard]}>
           <AppText variant="heading" style={[styles.fieldLabel, ds.fieldLabel]}>Sign-in method</AppText>
@@ -386,6 +469,37 @@ const styles = StyleSheet.create({
   saveBtn: {
     height: 44,
     flex: 1,
+  },
+  routeHint: {
+    fontSize: 11,
+  },
+  routeChipWrap: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: SPACING.sm,
+    marginTop: SPACING.xs,
+  },
+  routeChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: SPACING.md,
+    paddingVertical: 8,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: COLORS.glassBorder,
+    backgroundColor: COLORS.blueWash,
+  },
+  routeChipActive: {
+    borderColor: COLORS.primary,
+    backgroundColor: COLORS.primary,
+  },
+  routeChipText: {
+    color: COLORS.navy,
+    fontWeight: "600",
+  },
+  routeChipTextActive: {
+    color: COLORS.white,
   },
   roleBadge: {
     flexDirection: "row",

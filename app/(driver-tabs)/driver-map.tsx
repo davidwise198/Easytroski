@@ -24,7 +24,7 @@ import {
   subscribeDriverBookings,
   getDriverPickupLocations,
 } from "../../src/services/map";
-import { getActiveRoutes, startTrip, endTrip, confirmBooking, cancelBooking, updateBookingStatus, updateDriverSeats, updateDriverLocation } from "../../src/services/transport";
+import { getActiveRoutes, startTrip, endTrip, confirmBooking, cancelBooking, updateBookingStatus, updateDriverSeats, updateDriverLocation, getDriverDefaultRoute } from "../../src/services/transport";
 import { fetchRoutePath, RoutePath } from "../../src/services/directions";
 import { haversineMeters, formatDistance, formatEta, etaFromDistance } from "../../src/utils/geo";
 import { COLORS, SPACING } from "../../src/theme";
@@ -121,6 +121,7 @@ export default function DriverMapScreen() {
   // Data
   const [routes, setRoutes] = useState<Route[]>([]);
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
+  const [lockedRouteId, setLockedRouteId] = useState<string | null>(null);
   const [activeTrip, setActiveTrip] = useState<Trip | null>(null);
   const [bookings, setBookings] = useState<any[]>([]);
   const [starting, setStarting] = useState(false);
@@ -196,12 +197,23 @@ export default function DriverMapScreen() {
     prevBookingsRef.current = current;
   }, []);
 
-  // Load routes
+  // Load routes + the driver's locked default route
   useEffect(() => {
+    const driverId = user?.uid;
     getActiveRoutes()
       .then(setRoutes)
       .catch((error) => console.error("Failed to load routes:", error));
-  }, []);
+    if (driverId) {
+      getDriverDefaultRoute(driverId)
+        .then((id) => {
+          if (id) {
+            setLockedRouteId(id);
+            setSelectedRouteId(id);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [user?.uid]);
 
   // Subscribe to driver's active trip
   useEffect(() => {
@@ -667,8 +679,19 @@ export default function DriverMapScreen() {
                     styles.chip,
                     ds.chip,
                     selectedRouteId === route.id && styles.chipSelected,
+                    lockedRouteId && route.id !== selectedRouteId && styles.chipDim,
                   ]}
-                  onPress={() => setSelectedRouteId(route.id)}
+                  onPress={() => {
+                    if (lockedRouteId) {
+                      showToast(
+                        "info",
+                        "Route locked",
+                        "Your default route can be changed in Profile settings."
+                      );
+                      return;
+                    }
+                    setSelectedRouteId(route.id);
+                  }}
                 >
                   <AppText
                     variant="caption"
@@ -1173,6 +1196,9 @@ const styles = StyleSheet.create({
   routeChips: {
     paddingHorizontal: SPACING.md,
     gap: SPACING.sm,
+  },
+  chipDim: {
+    opacity: 0.5,
   },
   chip: {
     paddingHorizontal: SPACING.md,

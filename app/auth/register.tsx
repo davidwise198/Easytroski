@@ -22,6 +22,7 @@ import PasswordStrength from "../../src/components/ui/PasswordStrength";
 import { SPACING, COLORS } from "../../src/theme";
 import { registerUser, registerWithGoogle } from "../../src/services/auth";
 import { getFriendlyError } from "../../src/utils/firebaseErrors";
+import { validateEmail, isEmailFormatValid } from "../../src/utils/emailValidation";
 import { showToast } from "../../src/utils/toast";
 
 WebBrowser.maybeCompleteAuthSession();
@@ -182,6 +183,22 @@ export default function RegisterScreen() {
       return;
     }
 
+    // Reject dummy/typo mailboxes before an account is ever created.
+    const emailCheck = await validateEmail(email);
+    if (!emailCheck.valid) {
+      const reasons: Record<string, string> = {
+        format: "That doesn't look like a valid email address.",
+        disposable: "Disposable email services aren't allowed. Please use a real inbox.",
+        undeliverable: "We couldn't reach that email domain. Check the address for typos.",
+      };
+      showToast(
+        "warning",
+        "Email problem",
+        reasons[emailCheck.reason || "format"]
+      );
+      return;
+    }
+
     if (!password) {
       showToast("warning", "Missing password", "Please enter a password.");
       return;
@@ -225,11 +242,9 @@ export default function RegisterScreen() {
       });
       // Manual driver signup already collected all vehicle details —
       // skip onboarding and go straight to the dashboard.
-      if (userRole === "driver") {
-        router.replace("/driver-home");
-      } else {
-        router.replace("/home");
-      }
+      // Both roles land on the verify screen first: the account is created
+      // but the app unlocks only after the mailbox is confirmed.
+      router.replace("/auth/verify-email");
     } catch (error) {
       console.error("Register error:", error);
       showToast("error", "Registration failed", getFriendlyError(error));
@@ -369,6 +384,11 @@ export default function RegisterScreen() {
             value={email}
             onChangeText={setEmail}
           />
+          {email.trim().length > 3 && !isEmailFormatValid(email) && (
+            <AppText variant="caption" style={styles.emailHint}>
+              That email address looks incomplete.
+            </AppText>
+          )}
 
           <GlassInput
             placeholder="Password"
@@ -510,6 +530,13 @@ const styles = StyleSheet.create({
     opacity: 0.7,
     marginBottom: SPACING.lg,
     paddingHorizontal: SPACING.md,
+  },
+
+  emailHint: {
+    color: COLORS.warning || COLORS.primary,
+    marginTop: -SPACING.sm,
+    marginBottom: SPACING.sm,
+    marginLeft: SPACING.xs,
   },
 
   sectionLabel: {

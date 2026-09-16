@@ -1,6 +1,7 @@
 import {
   createUserWithEmailAndPassword,
   signInWithEmailAndPassword,
+  sendEmailVerification,
   sendPasswordResetEmail,
   signOut,
   GoogleAuthProvider,
@@ -132,7 +133,30 @@ export const registerUser = async (
 
   await createUserProfile(userCredential.user, profileData);
 
+  // Require mailbox verification for password accounts — a dummy address
+  // can never receive this mail, so it can never pass the AuthGate.
+  try {
+    await sendEmailVerification(userCredential.user);
+  } catch (error) {
+    console.error("Verification email error:", error);
+  }
+
   return userCredential.user;
+};
+
+// Re-send the verification email (Firebase throttles to ~1 per minute).
+export const resendEmailVerification = async () => {
+  const user = auth.currentUser;
+  if (!user) throw new Error("No signed-in user");
+  await sendEmailVerification(user);
+};
+
+// Re-read the signed-in user from the server so emailVerified is current.
+export const reloadUser = async () => {
+  const user = auth.currentUser;
+  if (!user) throw new Error("No signed-in user");
+  await user.reload();
+  return auth.currentUser;
 };
 
 // Login with email and password

@@ -24,6 +24,7 @@ import { useThemeColors } from "../../src/contexts/ThemeContext";
 import {
   getActiveRoutes,
   getDriverActiveTrip,
+  getDriverDefaultRoute,
   setDriverAvailability,
   startTrip,
   endTrip,
@@ -120,6 +121,7 @@ export default function DriverDashboardScreen() {
 
   const [routes, setRoutes] = useState<Route[]>([]);
   const [selectedRouteId, setSelectedRouteId] = useState<string | null>(null);
+  const [lockedRouteId, setLockedRouteId] = useState<string | null>(null);
   const [online, setOnline] = useState(false);
   const [loading, setLoading] = useState(true);
   const [starting, setStarting] = useState(false);
@@ -152,17 +154,25 @@ export default function DriverDashboardScreen() {
   }, [user?.uid]);
 
   useEffect(() => {
-    getActiveRoutes()
-      .then((activeRoutes) => {
+    const driverId = user?.uid;
+    Promise.all([
+      getActiveRoutes(),
+      driverId ? getDriverDefaultRoute(driverId) : Promise.resolve(null),
+    ])
+      .then(([activeRoutes, defaultRouteId]) => {
         setRoutes(activeRoutes);
-        if (!selectedRouteId && activeRoutes.length > 0) {
+        if (defaultRouteId && activeRoutes.some((r) => r.id === defaultRouteId)) {
+          // Saved default wins — it's locked until changed in Profile settings.
+          setLockedRouteId(defaultRouteId);
+          setSelectedRouteId(defaultRouteId);
+        } else if (!selectedRouteId && activeRoutes.length > 0) {
           setSelectedRouteId(activeRoutes[0].id);
         }
       })
       .catch((error) => console.error("Driver route loading error:", error))
       .finally(() => setLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [user?.uid]);
 
   // Keep the screen awake while online — a driver mid-trip must never miss a booking.
   useEffect(() => {
@@ -380,8 +390,13 @@ export default function DriverDashboardScreen() {
 
           {/* ─── Routes ─── */}
           <AppText variant="caption" style={[styles.sectionLabel, ds.secondary]}>
-            {activeTrip ? "CURRENT ROUTE" : "CHOOSE YOUR ROUTE"}
+            {activeTrip ? "CURRENT ROUTE" : lockedRouteId ? "YOUR DEFAULT ROUTE" : "CHOOSE YOUR ROUTE"}
           </AppText>
+          {lockedRouteId && (
+            <AppText variant="caption" style={[styles.lockNote, ds.secondary]}>
+              Locked as your default — change it in Profile settings.
+            </AppText>
+          )}
           {loading ? (
             <ActivityIndicator color={COLORS.primary} style={{ marginVertical: SPACING.lg }} />
           ) : routes.length === 0 ? (
@@ -406,8 +421,19 @@ export default function DriverDashboardScreen() {
                   style={[
                     [styles.routeRow, ds.routeRow],
                     route.id === selectedRouteId && [styles.selectedRoute, ds.selectedRoute],
+                    lockedRouteId && route.id !== selectedRouteId && styles.routeRowDim,
                   ]}
-                  onPress={() => setSelectedRouteId(route.id)}
+                  onPress={() => {
+                    if (lockedRouteId) {
+                      showToast(
+                        "info",
+                        "Route locked",
+                        "Your default route can be changed in Profile settings."
+                      );
+                      return;
+                    }
+                    setSelectedRouteId(route.id);
+                  }}
                 >
                   <View style={styles.routeRadio}>
                     <View
@@ -623,6 +649,14 @@ const styles = StyleSheet.create({
   routeCopy: { flex: 1 },
   routeTitle: { fontSize: 16, lineHeight: 21 },
   routeDest: { marginTop: 2 },
+  routeRowDim: {
+    opacity: 0.55,
+  },
+  lockNote: {
+    fontSize: 12,
+    marginTop: -2,
+    marginBottom: SPACING.sm,
+  },
 
   emptyState: { alignItems: "center", padding: SPACING.xl },
   emptyText: {

@@ -123,6 +123,14 @@ export default function LoginScreen() {
     try {
       const loggedInUser = await loginUser(email.trim().toLowerCase(), password);
       // The login screen isn't wrapped with AuthGate, so navigate based on role.
+      // Unverified password accounts are gated exactly like on registration.
+      const isPasswordAccount = loggedInUser.providerData.some(
+        (p) => p?.providerId === "password"
+      );
+      if (isPasswordAccount && loggedInUser.emailVerified === false) {
+        router.replace("/auth/verify-email");
+        return;
+      }
       const { getUserRole } = await import("../../src/services/auth");
       const role = await getUserRole(loggedInUser);
       if (!role) {
