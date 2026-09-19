@@ -205,9 +205,9 @@ export default function DriverDashboardScreen() {
 
       subscription = await Location.watchPositionAsync(
         {
-          accuracy: Location.Accuracy.Balanced,
-          timeInterval: 15000,
-          distanceInterval: 50,
+          accuracy: Location.Accuracy.High,
+          timeInterval: 8000,
+          distanceInterval: 12,
         },
         ({ coords }) => {
           if (!cancelled) {

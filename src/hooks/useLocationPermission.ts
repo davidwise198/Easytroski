@@ -46,9 +46,9 @@ export default function useLocationPermission(): UseLocationPermissionResult {
     try {
       watchRef.current = await Location.watchPositionAsync(
         {
-          accuracy: Location.Accuracy.Balanced,
-          timeInterval: 5000,
-          distanceInterval: 15,
+          accuracy: Location.Accuracy.High,
+          timeInterval: 4000,
+          distanceInterval: 8,
         },
         (fresh) => {
           setLocation(fresh);

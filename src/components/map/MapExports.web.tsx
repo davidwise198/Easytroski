@@ -34,6 +34,19 @@ export function Marker(_props: AnyProps) {
   return null;
 }
 
+export const MarkerAnimated = Marker;
+
+export class AnimatedRegion {
+  // Web stub — animated markers are native-only; on web the placeholder
+  // map explains itself and no marker is ever rendered.
+  constructor(_value?: Record<string, number>) {}
+  setValue(_value: Record<string, number>): void {}
+  timing(_config: Record<string, unknown>): { start: (cb?: (result: { finished: boolean }) => void) => void; stop: () => void } {
+    return { start: () => {}, stop: () => {} };
+  }
+  stopAnimation(_cb?: (region: unknown) => void): void {}
+}
+
 export function Callout(_props: AnyProps) {
   return null;
 }

@@ -8,6 +8,8 @@ import {
 } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { MapView, MapViewType, Marker, PROVIDER_DEFAULT } from "../../src/components/map/MapExports";
+import { AnimatedDriverMarker } from "../../src/components/map/AnimatedDriverMarker";
+import { isLocationFresh } from "../../src/utils/geo";
 import { router, useLocalSearchParams } from "expo-router";
 
 import AuthGate from "../../src/components/AuthGate";
@@ -16,7 +18,7 @@ import PrimaryButton from "../../src/components/ui/PrimaryButton";
 import { TripMarker } from "../../src/components/map/TripMarker";
 import { useLocation } from "../../src/contexts/LocationContext";
 import { useAuth } from "../../src/contexts/AuthContext";
-import { getActiveTripMarkers, subscribeActiveTripMarkers, subscribeDriverLocation } from "../../src/services/map";
+import { getActiveTripMarkers, subscribeActiveTripMarkers, subscribeDriverLocation, TrackedDriverLocation } from "../../src/services/map";
 import { fetchRoutePath, polylineLengthMeters, splitRouteAtDriver, RoutePath } from "../../src/services/directions";
 import { RouteLine } from "../../src/components/map/RouteLine";
 import { haversineMeters, formatDistance, formatEta, etaFromDistance } from "../../src/utils/geo";
@@ -109,6 +111,7 @@ export default function PassengerMapScreen() {
     trackingPanelSub: { color: colors.textSecondary },
     sheetDistanceChip: { backgroundColor: colors.blueWash },
     sheetDistanceText: { color: colors.primary },
+    recenterButton: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.veryLightBlue },
   }), [colors, isDark]);
   const params = useLocalSearchParams<{ routeId?: string }>();
   const {
@@ -134,17 +137,21 @@ export default function PassengerMapScreen() {
   const [cancellingBooking, setCancellingBooking] = useState(false);
   const [bookingSeats, setBookingSeats] = useState(1);
   const [trackedDriverId, setTrackedDriverId] = useState<string | null>(null);
-  const [trackedDriverLocation, setTrackedDriverLocation] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [trackedDriverLocation, setTrackedDriverLocation] = useState<TrackedDriverLocation | null>(null);
   const [showRating, setShowRating] = useState(false);
   const [ratingValue, setRatingValue] = useState(0);
   const [submittingRating, setSubmittingRating] = useState(false);
   const [tripToRate, setTripToRate] = useState<{ tripId: string; driverId: string } | null>(null);
-  const [driverApproaching, setDriverApproaching] = useState(false);
   const [remainingSeats, setRemainingSeats] = useState<number | null>(null);
   const [routePath, setRoutePath] = useState<RoutePath | null>(null);
   const [routedFrom, setRoutedFrom] = useState<{ latitude: number; longitude: number } | null>(null);
   const routeFetchRef = useRef(0);
-  const trackedLocRef = useRef<{ latitude: number; longitude: number } | null>(null);
+  const trackedLocRef = useRef<TrackedDriverLocation | null>(null);
+  // Camera follow: recenter gently while the driver moves, pause when the
+  // passenger pans the map manually, resume from the recenter button.
+  const [cameraFollow, setCameraFollow] = useState(true);
+  const followLastRef = useRef<{ latitude: number; longitude: number } | null>(null);
+  const pickupLastRef = useRef<{ latitude: number; longitude: number } | null>(null);
 
   // Selected trip for bottom sheet
   const [selectedMarker, setSelectedMarker] =
@@ -362,7 +369,8 @@ export default function PassengerMapScreen() {
     return unsubscribe;
   }, [lastBookingStatus, trackedDriverId]);
 
-  // Bolt-style road route: fetch driver→pickup route, refetch after driver moves >300 m
+  // Bolt-style road route: fetch driver→pickup route, refetch after either
+  // end moves far enough that the line no longer matches reality.
   useEffect(() => {
     if (lastBookingStatus !== "confirmed" || !trackedDriverLocation || !location) {
       setRoutePath(null);
@@ -371,7 +379,10 @@ export default function PassengerMapScreen() {
     }
     const driverPos = { latitude: trackedDriverLocation.latitude, longitude: trackedDriverLocation.longitude };
     const pickup = { latitude: location.coords.latitude, longitude: location.coords.longitude };
-    if (routedFrom && haversineMeters(routedFrom, driverPos) < 300) return;
+    const driverMoved = routedFrom && haversineMeters(routedFrom, driverPos) >= 300;
+    const pickupMoved = pickupLastRef.current && haversineMeters(pickupLastRef.current, pickup) >= 75;
+    if (routedFrom && !driverMoved && !pickupMoved) return;
+    pickupLastRef.current = pickup;
 
     const ticket = ++routeFetchRef.current;
     fetchRoutePath(driverPos, pickup)
@@ -384,13 +395,45 @@ export default function PassengerMapScreen() {
       .catch(() => {});
   }, [lastBookingStatus, trackedDriverLocation, location, routedFrom]);
 
+  // Camera follow: as the driver moves, keep driver + passenger in frame.
+  // Only recenters when the driver has moved meaningfully (>30 m) so the
+  // map doesn't jitter on every GPS blip, and never fights the passenger's
+  // own panning (cameraFollow pauses on drag; recenter button resumes it).
+  useEffect(() => {
+    if (
+      !cameraFollow ||
+      lastBookingStatus !== "confirmed" ||
+      !trackedDriverLocation ||
+      !location ||
+      !mapRef.current
+    ) {
+      return;
+    }
+    const driverPos = { latitude: trackedDriverLocation.latitude, longitude: trackedDriverLocation.longitude };
+    const passengerPos = { latitude: location.coords.latitude, longitude: location.coords.longitude };
+    if (followLastRef.current && haversineMeters(followLastRef.current, driverPos) < 30) return;
+    followLastRef.current = driverPos;
+
+    const lats = [driverPos.latitude, passengerPos.latitude];
+    const lngs = [driverPos.longitude, passengerPos.longitude];
+    mapRef.current.animateToRegion(
+      {
+        latitude: (Math.min(...lats) + Math.max(...lats)) / 2,
+        longitude: (Math.min(...lngs) + Math.max(...lngs)) / 2,
+        latitudeDelta: Math.max(0.012, (Math.max(...lats) - Math.min(...lats)) * 1.9),
+        longitudeDelta: Math.max(0.012, (Math.max(...lngs) - Math.min(...lngs)) * 1.9),
+      },
+      650
+    );
+  }, [cameraFollow, lastBookingStatus, trackedDriverLocation, location]);
+
   // Fit camera to driver + passenger once tracking begins
   useEffect(() => {
     if (lastBookingStatus !== "confirmed" || !trackedDriverId) return;
     const timer = setTimeout(() => {
       const driverPos = trackedLocRef.current;
       if (!driverPos || !mapRef.current) return;
-      const points = [driverPos];
+      const points: { latitude: number; longitude: number }[] = [driverPos];
       if (location) {
         points.push({ latitude: location.coords.latitude, longitude: location.coords.longitude });
       }
@@ -410,18 +453,23 @@ export default function PassengerMapScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lastBookingStatus, trackedDriverId]);
 
-  // Live driver→passenger metrics for the tracking panel
-  const liveDistanceM =
+  // Live driver→passenger metrics for the tracking panel.
+  // Freshness matters: a stale Firestore position (driver app closed or
+  // not yet publishing) must never claim "arrived" or "approaching".
+  const driverFixIsFresh = trackedDriverLocation ? isLocationFresh(trackedDriverLocation.updatedAt) : false;
+  const liveDriverM =
     trackedDriverLocation && location
       ? haversineMeters(trackedDriverLocation, {
           latitude: location.coords.latitude,
           longitude: location.coords.longitude,
         })
       : null;
+  const driverArrived = driverFixIsFresh && liveDriverM != null && liveDriverM < 60;
+  const driverApproaching = driverFixIsFresh && !driverArrived && liveDriverM != null && liveDriverM < 500;
   const remainingRouteM =
     routePath && trackedDriverLocation
       ? polylineLengthMeters(splitRouteAtDriver(routePath.coordinates, trackedDriverLocation).remaining)
-      : liveDistanceM;
+      : liveDriverM;
   const fullRouteM = routePath ? polylineLengthMeters(routePath.coordinates) : 0;
   const etaMinutes =
     routePath?.fromRoads && routePath.durationSeconds > 0 && fullRouteM > 0 && remainingRouteM != null
@@ -429,7 +477,6 @@ export default function PassengerMapScreen() {
       : remainingRouteM != null
         ? etaFromDistance(remainingRouteM)
         : null;
-  const driverArrived = liveDistanceM != null && liveDistanceM < 80;
   const selectedDistanceM =
     selectedMarker && location
       ? haversineMeters(selectedMarker.driverLocation, {
@@ -495,23 +542,6 @@ export default function PassengerMapScreen() {
     }
   }, [trackedDriverId, lastBookingStatus, markers]);
 
-  // Check if driver is approaching (within 500m of pickup)
-  useEffect(() => {
-    if (!trackedDriverLocation || !lastBookingId || lastBookingStatus !== "confirmed") {
-      setDriverApproaching(false);
-      return;
-    }
-
-    // Simple distance check using Haversine
-    const R = 6371000; // Earth radius in meters
-    const dLat = ((trackedDriverLocation.latitude - (location?.coords.latitude || 0)) * Math.PI) / 180;
-    const dLon = ((trackedDriverLocation.longitude - (location?.coords.longitude || 0)) * Math.PI) / 180;
-    const a = Math.sin(dLat / 2) ** 2 + Math.cos((location?.coords.latitude || 0) * Math.PI / 180) * Math.cos(trackedDriverLocation.latitude * Math.PI / 180) * Math.sin(dLon / 2) ** 2;
-    const distance = R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-    setDriverApproaching(distance < 500);
-  }, [trackedDriverLocation, lastBookingId, lastBookingStatus, location]);
-
   const handleSubmitRating = useCallback(async () => {
     if (!tripToRate || !user?.uid || ratingValue === 0) return;
     setSubmittingRating(true);
@@ -548,6 +578,7 @@ export default function PassengerMapScreen() {
           showsUserLocation={permissionStatus === "granted"}
           showsMyLocationButton={false}
           initialRegion={userRegion}
+          onPanDrag={() => setCameraFollow(false)}
         >
           {/* Trip markers */}
           {markers.map((marker) => (
@@ -558,16 +589,9 @@ export default function PassengerMapScreen() {
             />
           ))}
 
-          {/* Live tracking marker for confirmed booking */}
-          {trackedDriverLocation && lastBookingStatus === "confirmed" && (
-            <Marker
-              coordinate={trackedDriverLocation}
-              anchor={{ x: 0.5, y: 0.5 }}
-            >
-              <View style={styles.trackingMarker}>
-                <MaterialCommunityIcons name="bus" size={20} color={COLORS.white} />
-              </View>
-            </Marker>
+          {/* Bolt-style gliding/rotating marker for the confirmed booking */}
+          {lastBookingStatus === "confirmed" && trackedDriverLocation && (
+            <AnimatedDriverMarker location={trackedDriverLocation} />
           )}
 
           {/* Bolt-style road route line (driver → pickup) */}
@@ -664,11 +688,11 @@ export default function PassengerMapScreen() {
         </View>
 
         {/* ---- Live tracking panel (Bolt-style) ---- */}
-        {lastBookingStatus === "confirmed" && trackedDriverLocation && liveDistanceM != null && (
+        {lastBookingStatus === "confirmed" && (
           <View style={[styles.trackingPanel, ds.trackingPanel]}>
             <View style={styles.trackingPanelIcon}>
               <MaterialCommunityIcons
-                name={driverArrived ? "map-marker-check" : driverApproaching ? "bus-alert" : "map-marker-path"}
+                name={driverArrived ? "map-marker-check" : !driverFixIsFresh ? "map-marker-question" : driverApproaching ? "bus-alert" : "map-marker-path"}
                 size={20}
                 color={driverApproaching || driverArrived ? COLORS.success : COLORS.primary}
               />
@@ -677,17 +701,39 @@ export default function PassengerMapScreen() {
               <AppText variant="heading" style={[styles.trackingPanelTitle, ds.trackingPanelTitle]}>
                 {driverArrived
                   ? "Your driver has arrived"
-                  : `Driver is ${formatDistance(liveDistanceM)} away${etaMinutes != null ? ` • ${formatEta(etaMinutes)}` : ""}`}
+                  : !driverFixIsFresh
+                    ? "Locating your driver…"
+                    : liveDriverM != null
+                      ? `Driver is ${formatDistance(liveDriverM)} away${etaMinutes != null ? ` • ${formatEta(etaMinutes)}` : ""}`
+                      : "Tracking your driver"}
               </AppText>
               <AppText variant="caption" style={[styles.trackingPanelSub, ds.trackingPanelSub]}>
-                {driverApproaching || driverArrived
+                {driverArrived
                   ? "Get ready — your driver is close"
-                  : routePath?.fromRoads
-                    ? "Live route to your pickup"
-                    : "Direct line — road routing unavailable"}
+                  : !driverFixIsFresh
+                    ? "Waiting for the driver's live position"
+                    : driverApproaching
+                      ? "Get ready — your driver is close"
+                      : routePath?.fromRoads
+                        ? "Live route to your pickup"
+                        : "Direct line — road routing unavailable"}
               </AppText>
             </View>
           </View>
+        )}
+
+        {/* Resume camera follow after the passenger pans away */}
+        {lastBookingStatus === "confirmed" && !cameraFollow && (
+          <Pressable
+            accessibilityLabel="Recenter map on driver"
+            onPress={() => {
+              followLastRef.current = null;
+              setCameraFollow(true);
+            }}
+            style={[styles.recenterButton, ds.recenterButton]}
+          >
+            <MaterialCommunityIcons name="crosshairs-gps" size={20} color={COLORS.primary} />
+          </Pressable>
         )}
 
         {/* ---- Booking status banner (hidden once the trip is completed) ---- */}
@@ -1337,19 +1383,19 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "600",
   },
-  trackingMarker: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: COLORS.success,
+  recenterButton: {
+    position: "absolute",
+    right: 16,
+    bottom: 260,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 3,
-    borderColor: COLORS.white,
     shadowColor: COLORS.navy,
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
     elevation: 5,
   },
 

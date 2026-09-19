@@ -368,15 +368,35 @@ export async function getDriverPickupLocations(
  * Subscribe to a driver's real-time location updates.
  * Used by passengers to track the driver after booking.
  */
+/**
+ * Live position of the driver a passenger is tracking. Extends the raw
+ * coordinates with direction-of-travel and the time the driver's device
+ * last published a fix, so callers can animate movement and ignore stale
+ * points (e.g. leftovers from a previous session).
+ */
+export type TrackedDriverLocation = {
+  latitude: number;
+  longitude: number;
+  /** Compass bearing in degrees (0 = north), or null when stationary/unknown */
+  heading: number | null;
+  /** ISO timestamp of the driver's last GPS write, or null if never reported */
+  updatedAt: string | null;
+};
+
 export function subscribeDriverLocation(
   driverId: string,
-  onUpdate: (location: { latitude: number; longitude: number } | null) => void
+  onUpdate: (location: TrackedDriverLocation | null) => void
 ): () => void {
   return onSnapshot(doc(db, "drivers", driverId), (snapshot) => {
     if (snapshot.exists()) {
       const data = snapshot.data();
       if (data.currentLocation) {
-        onUpdate(data.currentLocation);
+        onUpdate({
+          latitude: data.currentLocation.latitude,
+          longitude: data.currentLocation.longitude,
+          heading: typeof data.heading === "number" ? data.heading : null,
+          updatedAt: typeof data.locationUpdatedAt === "string" ? data.locationUpdatedAt : null,
+        });
       } else {
         onUpdate(null);
       }

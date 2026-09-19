@@ -2,6 +2,8 @@
 export {
   default as MapView,
   Marker,
+  MarkerAnimated,
+  AnimatedRegion,
   Callout,
   Polyline,
   PROVIDER_DEFAULT,

@@ -16,6 +16,7 @@ import {
 
 import { db } from "./firebase";
 import { Booking, Location, Route, Trip } from "../types/models";
+import { haversineMeters, bearingDegrees } from "../utils/geo";
 import {
   notifyDriverOfBooking,
   notifyPassengerOfConfirmation,
@@ -370,11 +371,24 @@ export const updateDriverSeats = async (driverId: string, seats: number) => {
   });
 };
 
+// Last written position per driver — used to derive the direction of
+// travel (heading) without an extra Firestore read.
+const lastWrittenCoords: Record<string, { latitude: number; longitude: number }> = {};
+
 export const updateDriverLocation = async (
   driverId: string,
   latitude: number,
   longitude: number
 ) => {
+  // Derive heading from the previous fix so passengers can rotate the
+  // driver's marker to face the direction of travel.
+  const prev = lastWrittenCoords[driverId];
+  const heading =
+    prev && haversineMeters(prev, { latitude, longitude }) >= 4
+      ? bearingDegrees(prev, { latitude, longitude })
+      : null;
+  lastWrittenCoords[driverId] = { latitude, longitude };
+
   await setDoc(
     doc(db, "drivers", driverId),
     {
@@ -383,6 +397,7 @@ export const updateDriverLocation = async (
         latitude,
         longitude,
       },
+      ...(heading != null ? { heading } : {}),
       locationUpdatedAt: new Date().toISOString(),
     },
     { merge: true }

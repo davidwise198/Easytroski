@@ -279,7 +279,9 @@ export default function DriverMapScreen() {
 
       locationSubscriptionRef.current = await Location.watchPositionAsync(
         hasConfirmedBooking
-          ? { accuracy: Location.Accuracy.High, timeInterval: 7000, distanceInterval: 15 }
+          ? // Tight cadence while carrying a passenger: the tracking passenger
+            // sees this position glide in near-real-time on their map.
+            { accuracy: Location.Accuracy.High, timeInterval: 4000, distanceInterval: 8 }
           : { accuracy: Location.Accuracy.Balanced, timeInterval: 15000, distanceInterval: 50 },
         ({ coords }) => {
           if (!cancelled) {
