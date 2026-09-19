@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useState } from "react";
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
+import * as Location from "expo-location";
 import { router, useLocalSearchParams } from "expo-router";
 
 import AppBackground from "../../src/components/ui/AppBackground";
@@ -8,7 +9,7 @@ import AppText from "../../src/components/ui/AppText";
 import PrimaryButton from "../../src/components/ui/PrimaryButton";
 import AuthGate from "../../src/components/AuthGate";
 import { auth } from "../../src/services/firebase";
-import { createBooking, getAvailableTrips, getRoute } from "../../src/services/transport";
+import { createBooking, getAvailableTrips, getRoute, NoSeatsError } from "../../src/services/transport";
 import { COLORS, SPACING } from "../../src/theme";
 import { useThemeColors } from "../../src/contexts/ThemeContext";
 import { useMemo } from "react";
@@ -77,13 +78,31 @@ export default function NewBookingScreen() {
 
       // Book 1 seat on the first live trip for this route
       const trip = availableTrips[0];
+
+      // The driver navigates to the pickup COORDINATES — a booking placed
+      // with (0, 0) sends them into the Gulf of Guinea.
+      let pickupLat = 0;
+      let pickupLng = 0;
+      try {
+        const { status } = await Location.getForegroundPermissionsAsync();
+        if (status === "granted") {
+          const pos = await Location.getCurrentPositionAsync({
+            accuracy: Location.Accuracy.Balanced,
+          });
+          pickupLat = pos.coords.latitude;
+          pickupLng = pos.coords.longitude;
+        }
+      } catch {
+        // Fall through with (0, 0) — same as before rather than blocking the booking
+      }
+
       await createBooking({
         passengerId,
         driverId: trip.driverId,
         routeId: route.id,
         pickupLocation: {
-          latitude: 0,
-          longitude: 0,
+          latitude: pickupLat,
+          longitude: pickupLng,
           address: route.origin,
         },
         dropOffLocation: {
@@ -96,7 +115,11 @@ export default function NewBookingScreen() {
       setBooked(true);
       showToast("success", "Booking sent", `Your driver will confirm the ${route.origin} → ${route.destination} trip shortly.`);
     } catch (error) {
-      showToast("error", "Booking failed", getFriendlyError(error));
+      showToast(
+        "error",
+        "Booking failed",
+        error instanceof NoSeatsError ? error.message : getFriendlyError(error)
+      );
     } finally {
       setSubmitting(false);
     }

@@ -12,6 +12,7 @@ import {
   updateDoc,
   where,
   serverTimestamp,
+  runTransaction,
 } from "firebase/firestore";
 
 import { db } from "./firebase";
@@ -103,29 +104,80 @@ export const getAvailableTrips = async (routeId: string): Promise<Trip[]> => {
 
 export type CreateBookingInput = Omit<Booking, "id" | "createdAt" | "status">;
 
-export const createBooking = async (booking: CreateBookingInput) => {
-  const bookingReference = await addDoc(collection(db, "bookings"), {
-    ...booking,
-    status: "pending",
-    createdAt: new Date().toISOString(),
-  });
+/** Thrown when the driver no longer has enough free seats. */
+export class NoSeatsError extends Error {
+  constructor() {
+    super("This tro-tro is already full. Please pick another ride.");
+    this.name = "NoSeatsError";
+  }
+}
 
-  // Decrement available seats on the driver
-  if (booking.driverId) {
-    try {
-      await decrementDriverSeats(booking.driverId);
-    } catch {
-      // Seat decrement is best-effort — booking still succeeded
+/**
+ * Create a booking transactionally.
+ *
+ * The driver's seat count and the booking are written in ONE Firestore
+ * transaction that re-reads `availableSeats` at commit time — two passengers
+ * racing for the last seat can no longer both succeed, and a failed seat
+ * decrement can no longer leave a phantom booking behind.
+ *
+ * The passenger's name is embedded on the booking so the driver's dashboard
+ * never needs to read another user's profile doc.
+ */
+export const createBooking = async (booking: CreateBookingInput) => {
+  // Resolve the passenger's name from their OWN profile (owner-read, always
+  // permitted) so drivers see who booked without touching users/{uid}.
+  let passengerName = "Passenger";
+  try {
+    const userDoc = await getDoc(doc(db, "users", booking.passengerId));
+    const name = userDoc.exists()
+      ? userDoc.data().name || userDoc.data().displayName || ""
+      : "";
+    if (name) passengerName = name;
+  } catch {
+    // Name is cosmetic — booking proceeds without it
+  }
+
+  const bookingId = await runTransaction(db, async (tx) => {
+    const bookingRef = doc(collection(db, "bookings"));
+
+    let seatsLeft = Number.POSITIVE_INFINITY;
+    let driverRef: ReturnType<typeof doc> | null = null;
+    if (booking.driverId) {
+      driverRef = doc(db, "drivers", booking.driverId);
+      const driverSnap = await tx.get(driverRef);
+      if (driverSnap.exists()) {
+        seatsLeft = driverSnap.data().availableSeats ?? 0;
+      }
     }
 
-    // Notify the driver about the new booking (best-effort)
+    const requested = booking.seats ?? 1;
+    if (requested > seatsLeft) {
+      // Aborts the transaction — nothing is written.
+      throw new NoSeatsError();
+    }
+
+    tx.set(bookingRef, {
+      ...booking,
+      passengerName,
+      status: "pending",
+      createdAt: new Date().toISOString(),
+    });
+
+    if (driverRef) {
+      tx.update(driverRef, { availableSeats: increment(-requested) });
+    }
+    return bookingRef.id;
+  });
+
+  // Notify the driver about the new booking (best-effort, post-commit)
+  if (booking.driverId) {
     const routeLabel = booking.pickupLocation?.address
       ? `${booking.pickupLocation.address} → ${booking.dropOffLocation?.address || "destination"}`
       : "a route";
-    notifyDriverOfBooking(booking.driverId, "A passenger", routeLabel).catch(() => {});
+    notifyDriverOfBooking(booking.driverId, passengerName, routeLabel).catch(() => {});
   }
 
-  return bookingReference.id;
+  return bookingId;
 };
 
 export const createLocation = (address: string): Location => ({
@@ -341,16 +393,17 @@ export const cancelBooking = async (
   if (cancelledBy !== "passenger" && passengerId) {
     notifyPassengerOfRejection(passengerId, routeLabel || "your route").catch(() => {});
   }
-};
-
-/**
+};/**
  * Decrement available seats on the driver when a passenger books.
+ * Booking creation now handles this transactionally — kept only for
+ * potential direct callers.
  */
 export const decrementDriverSeats = async (driverId: string) => {
   await updateDoc(doc(db, "drivers", driverId), {
     availableSeats: increment(-1),
   });
 };
+
 
 /**
  * Increment available seats when a booking is cancelled.

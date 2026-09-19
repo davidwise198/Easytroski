@@ -21,9 +21,12 @@ import { db } from "./firebase";
  */
 export async function savePushToken(userId: string, token: string) {
   try {
+    // Tokens are credentials — they live in push-tokens/{uid}, not on the
+    // user's profile, so sending a push never requires reading another
+    // user's document.
     await setDoc(
-      doc(db, "users", userId),
-      { pushToken: token, pushTokenUpdatedAt: new Date().toISOString() },
+      doc(db, "push-tokens", userId),
+      { token, updatedAt: new Date().toISOString() },
       { merge: true }
     );
   } catch (error) {
@@ -36,9 +39,9 @@ export async function savePushToken(userId: string, token: string) {
  */
 export async function getUserPushToken(userId: string): Promise<string | null> {
   try {
-    const userDoc = await getDoc(doc(db, "users", userId));
-    if (userDoc.exists()) {
-      return userDoc.data().pushToken || null;
+    const tokenDoc = await getDoc(doc(db, "push-tokens", userId));
+    if (tokenDoc.exists()) {
+      return tokenDoc.data().token || null;
     }
     return null;
   } catch {

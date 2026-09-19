@@ -349,7 +349,9 @@ export async function getDriverPickupLocations(
   for (const doc of snapshot.docs) {
     const data = doc.data();
     if (data.pickupLocation?.latitude && data.pickupLocation?.longitude) {
-      const passengerName = await resolveUserName(data.passengerId);
+      // Embedded name first — users/{uid} reads are owner/admin-only now.
+      const passengerName =
+        data.passengerName || (await resolveUserName(data.passengerId));
       pickups.push({
         id: doc.id,
         latitude: data.pickupLocation.latitude,
@@ -430,9 +432,11 @@ export function subscribeDriverBookings(
       const bookings = await Promise.all(
         snapshot.docs.map(async (d) => {
           const data = d.data();
-          const passengerName = data.passengerId
-            ? await resolveUserName(data.passengerId)
-            : "Passenger";
+          // Prefer the name embedded at booking creation — reading the
+          // passenger's profile doc is no longer permitted by the rules.
+          const passengerName =
+            data.passengerName ||
+            (data.passengerId ? await resolveUserName(data.passengerId) : "Passenger");
           return { id: d.id, ...data, passengerName };
         })
       );

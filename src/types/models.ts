@@ -115,6 +115,8 @@ export interface Booking {
   passengerId: string;
   driverId: string;
 
+  /** Passenger's display name, embedded at creation so drivers never need to read other users' profiles. */
+  passengerName?: string;
   routeId: string;
 
   pickupLocation: Location;

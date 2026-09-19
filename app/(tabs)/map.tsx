@@ -23,7 +23,7 @@ import { fetchRoutePath, polylineLengthMeters, splitRouteAtDriver, RoutePath } f
 import { RouteLine } from "../../src/components/map/RouteLine";
 import { haversineMeters, formatDistance, formatEta, etaFromDistance } from "../../src/utils/geo";
 import StarRating from "../../src/components/ui/StarRating";
-import { createBooking, cancelBooking, rateDriver, getActiveRoutes } from "../../src/services/transport";
+import { createBooking, cancelBooking, rateDriver, getActiveRoutes, NoSeatsError } from "../../src/services/transport";
 import { auth, db } from "../../src/services/firebase";
 import { doc, onSnapshot } from "firebase/firestore";
 import { COLORS, SPACING } from "../../src/theme";
@@ -304,6 +304,15 @@ export default function PassengerMapScreen() {
         setSelectedMarker(null);
         return;
       }
+      // The driver navigates to the pickup COORDINATES, so a booking without
+      // a real passenger position sends them to the wrong place.
+      const passengerLat = location?.coords?.latitude;
+      const passengerLng = location?.coords?.longitude;
+      if (passengerLat == null || passengerLng == null) {
+        showToast("info", "Location needed", "Turn on location so your driver can find you, then book again.");
+        setSelectedMarker(null);
+        return;
+      }
       // Hard cap of 3 seats per booking
       const seatsToBook = Math.min(3, requestedSeats, seatsLeft);
 
@@ -313,13 +322,16 @@ export default function PassengerMapScreen() {
           driverId: marker.trip.driverId,
           routeId: marker.trip.routeId ?? "",
           pickupLocation: {
-            latitude: marker.driverLocation?.latitude ?? 0,
-            longitude: marker.driverLocation?.longitude ?? 0,
+            // The passenger's real current position — where the driver must go.
+            latitude: passengerLat,
+            longitude: passengerLng,
             address: marker.trip.origin || "Pickup",
           },
           dropOffLocation: {
-            latitude: marker.driverLocation?.latitude ?? 0,
-            longitude: marker.driverLocation?.longitude ?? 0,
+            // Route destinations are name pairs with no stored coordinates,
+            // so the honest value is the labelled address.
+            latitude: 0,
+            longitude: 0,
             address: marker.trip.destination || "Drop-off",
           },
           seats: seatsToBook,
@@ -345,13 +357,15 @@ export default function PassengerMapScreen() {
         showToast(
           "error",
           "Booking failed",
-          getFriendlyError(error)
+          error instanceof NoSeatsError
+            ? error.message
+            : getFriendlyError(error)
         );
       } finally {
         setBookingTripId(null);
       }
     },
-    [selectedRouteId, requestedSeats, lastBookingId, lastBookingStatus]
+    [selectedRouteId, requestedSeats, lastBookingId, lastBookingStatus, location]
   );
 
   // Subscribe to driver location when booking is confirmed

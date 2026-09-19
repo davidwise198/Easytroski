@@ -43,9 +43,9 @@ service cloud.firestore {
         && fieldExists("name")
         && fieldExists("email")
         && reasonableSize();
-      // Read: owner, admin, or any signed-in user — drivers need to see
-      // passenger names on incoming bookings (name/email only, no secrets).
-      allow read: if isOwner(userId) || isAdmin() || signedIn();
+      // Read: owner and admin ONLY. Drivers see passenger names via the
+      // passengerName field embedded on the booking — not by reading profiles.
+      allow read: if isOwner(userId) || isAdmin();
       allow update: if isOwner(userId) || isAdmin();
       allow delete: if false;
     }
@@ -57,6 +57,18 @@ service cloud.firestore {
     match /install-sessions/{userId} {
       allow read: if isOwner(userId);
       allow write: if isOwner(userId);
+    }
+
+    // ─── Push tokens ───────────────────────────────────────────────────
+    //
+    // Tokens are credentials — they live in their own collection so that
+    // sending a push never requires reading another user's profile.
+    match /push-tokens/{userId} {
+      allow read: if isOwner(userId) || isAdmin();
+      allow create, update: if isOwner(userId)
+        && fieldExists("token")
+        && reasonableSize();
+      allow delete: if isOwner(userId) || isAdmin();
     }
 
     // ─── Routes (admin-managed) ────────────────────────────────────────
