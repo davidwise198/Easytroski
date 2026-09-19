@@ -1,5 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
+  Animated,
+  Easing,
   Linking,
   Platform,
   Pressable,
@@ -137,6 +139,43 @@ export default function DriverMapScreen() {
   // Booking alarm state
   const [alertBooking, setAlertBooking] = useState<any | null>(null);
   const [alertSecondsLeft, setAlertSecondsLeft] = useState(ALERT_SECONDS);
+
+  // Takeover-card entrance + attention pulse. The card fades/scales in and
+  // the bell icon pulses continuously so a driver mid-drive cannot miss it.
+  const alertAnim = useRef(new Animated.Value(0)).current;
+  const alertPulse = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!alertBooking) {
+      alertAnim.setValue(0);
+      alertPulse.setValue(0);
+      return;
+    }
+    Animated.timing(alertAnim, {
+      toValue: 1,
+      duration: 220,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true,
+    }).start();
+    const pulse = Animated.loop(
+      Animated.sequence([
+        Animated.timing(alertPulse, {
+          toValue: 1,
+          duration: 550,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(alertPulse, {
+          toValue: 0,
+          duration: 550,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    pulse.start();
+    return () => pulse.stop();
+  }, [alertBooking, alertAnim, alertPulse]);
   const seenBookingIdsRef = useRef<Set<string>>(new Set());
   const alertDismissedIdsRef = useRef<Set<string>>(new Set());
   const firstLocationFixRef = useRef(false);
@@ -989,10 +1028,38 @@ export default function DriverMapScreen() {
 
         {/* ---- New-booking takeover card ---- */}
         {alertBooking && (
-          <View style={styles.alertOverlay}>
-            <View style={styles.alertCard}>
+          <Animated.View style={[styles.alertOverlay, { opacity: alertAnim }]}>
+            <Animated.View
+              style={[
+                styles.alertCard,
+                {
+                  transform: [
+                    {
+                      scale: alertAnim.interpolate({
+                        inputRange: [0, 1],
+                        outputRange: [0.9, 1],
+                      }),
+                    },
+                  ],
+                },
+              ]}
+            >
               <View style={styles.alertHeader}>
-                <View style={styles.alertIconWrap}>
+                <View
+                  style={[
+                    styles.alertIconWrap,
+                    {
+                      transform: [
+                        {
+                          scale: alertPulse.interpolate({
+                            inputRange: [0, 1],
+                            outputRange: [1, 1.15],
+                          }),
+                        },
+                      ],
+                    },
+                  ]}
+                >
                   <MaterialCommunityIcons name="bell-ring-outline" size={22} color={COLORS.white} />
                 </View>
                 <View style={styles.alertCopy}>
@@ -1044,8 +1111,8 @@ export default function DriverMapScreen() {
                   </AppText>
                 </Pressable>
               </View>
-            </View>
-          </View>
+            </Animated.View>
+          </Animated.View>
         )}
       </View>
     </AuthGate>
@@ -1590,12 +1657,17 @@ const styles = StyleSheet.create({
 
   // New-booking takeover card
   alertOverlay: {
-    position: "absolute",
-    left: SPACING.md,
-    right: SPACING.md,
-    bottom: 96,
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 60,
+    elevation: 24,
+    backgroundColor: "rgba(11,23,44,0.55)",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: SPACING.lg,
   },
   alertCard: {
+    width: "100%",
+    maxWidth: 420,
     backgroundColor: COLORS.navy,
     borderRadius: 20,
     padding: SPACING.lg,
