@@ -10,6 +10,22 @@ import {
 } from "firebase/firestore";
 
 import { db } from "./firebase";
+import { isLocationFresh } from "../utils/geo";
+
+/**
+ * A driver only counts as live - visible and bookable to passengers -
+ * while their device is actively publishing location fixes. A driver
+ * who closed the app stops writing `locationUpdatedAt`, so they drop
+ * off the passenger map within the freshness window even though
+ * `online` may still be true in Firestore.
+ */
+export function isDriverLive(driver: {
+  online?: boolean;
+  locationUpdatedAt?: string | null;
+}): boolean {
+  if (driver.online === false) return false;
+  return isLocationFresh(driver.locationUpdatedAt);
+}
 
 // ---------------------------------------------------------------------------
 // User name cache — avoids repeated Firestore reads for the same driver
@@ -115,6 +131,8 @@ export async function getActiveTripMarkers(
     if (!driverDoc.exists()) continue;
 
     const driver = driverDoc.data() as Driver;
+    // Ghost guard: skip drivers whose device stopped reporting (app closed).
+    if (!isDriverLive(driver)) continue;
     if (!driver.currentLocation) continue;
 
     // Join vehicle for display info
@@ -149,6 +167,7 @@ export async function getActiveTripMarkers(
       },
       driverLocation: driver.currentLocation,
       availableSeats: driver.availableSeats ?? 0,
+      locationUpdatedAt: driver.locationUpdatedAt ?? null,
     });
   }
 
@@ -184,6 +203,8 @@ export function subscribeActiveTripMarkers(
       if (!driverDoc.exists()) continue;
 
       const driver = driverDoc.data() as Driver;
+      // Ghost guard: skip drivers whose device stopped reporting (app closed).
+      if (!isDriverLive(driver)) continue;
       if (!driver.currentLocation) continue;
 
       let vehicle: Vehicle | undefined;
@@ -217,6 +238,7 @@ export function subscribeActiveTripMarkers(
           destination: routeData?.destination,
         },      driverLocation: driver.currentLocation,
       availableSeats: driver.availableSeats ?? 0,
+      locationUpdatedAt: driver.locationUpdatedAt ?? null,
     });
     }
 
@@ -489,8 +511,11 @@ export async function getRouteAvailableSeats(routeId: string): Promise<{ totalSe
     const driverDoc = await getDoc(doc(db, "drivers", trip.driverId));
     if (driverDoc.exists()) {
       const driver = driverDoc.data();
-      totalSeats += driver.availableSeats ?? 0;
-      totalCapacity += driver.vehicleCapacity ?? 12;
+      // A driver whose device stopped publishing must not advertise seats.
+      if (isDriverLive(driver)) {
+        totalSeats += driver.availableSeats ?? 0;
+        totalCapacity += driver.vehicleCapacity ?? 12;
+      }
     }
   }
 

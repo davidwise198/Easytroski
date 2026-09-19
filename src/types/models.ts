@@ -77,6 +77,9 @@ export interface Driver {
 
   currentLocation?: Location;
 
+  /** ISO timestamp of the driver's last GPS publish - liveness signal for ghost-driver filtering */
+  locationUpdatedAt?: string;
+
   rating?: number;
 
   // Vehicle details written at driver onboarding (no separate vehicles doc
@@ -166,6 +169,8 @@ export interface ActiveTripMarker {
   /** Plate + color come from the driver doc (onboarding data) */
   vehiclePlate?: string;
   vehicleColor?: string;
+  /** ISO time of the driver's last GPS write - lets the UI prune drivers whose app died between snapshots */
+  locationUpdatedAt?: string | null;
 }
 
 

@@ -30,6 +30,7 @@ import {
   endTrip,
   updateDriverSeats,
   updateDriverLocation,
+  selfHealAfterRestart,
 } from "../../src/services/transport";
 import { getUserProfile, getPhotoURL } from "../../src/services/profile";
 import { COLORS, SPACING } from "../../src/theme";
@@ -141,6 +142,10 @@ export default function DriverDashboardScreen() {
   useEffect(() => {
     const driverId = user?.uid;
     if (!driverId) return;
+
+    // If the app was killed while online, take the driver back offline -
+    // passengers must never see a driver who isn't running the app.
+    selfHealAfterRestart(driverId).catch(() => {});
 
     getDriverActiveTrip(driverId)
       .then((trip) => {

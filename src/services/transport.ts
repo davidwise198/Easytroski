@@ -17,7 +17,7 @@ import {
 
 import { db } from "./firebase";
 import { Booking, Location, Route, Trip } from "../types/models";
-import { haversineMeters, bearingDegrees } from "../utils/geo";
+import { haversineMeters, bearingDegrees, isLocationFresh } from "../utils/geo";
 import {
   notifyDriverOfBooking,
   notifyPassengerOfConfirmation,
@@ -770,6 +770,25 @@ export const cleanupInactiveDrivers = async () => {
         await autoOfflineDriver(driverId);
       }
     }
+  } catch {
+    // Best-effort
+  }
+};
+
+/**
+ * Called when the driver app comes to the foreground. If this device was
+ * gone long enough that its last location write went stale, any trip that
+ * survived the kill is ended and the driver is taken offline - passengers
+ * must not see a driver who isn't running the app.
+ */
+export const selfHealAfterRestart = async (driverId: string) => {
+  try {
+    const driverDoc = await getDoc(doc(db, "drivers", driverId));
+    if (!driverDoc.exists()) return;
+    const driver = driverDoc.data();
+    if (!driver.online) return;
+    if (isLocationFresh(driver.locationUpdatedAt)) return; // device stayed alive
+    await autoOfflineDriver(driverId);
   } catch {
     // Best-effort
   }

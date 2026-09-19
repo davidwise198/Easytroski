@@ -207,6 +207,18 @@ export default function PassengerMapScreen() {
     }
   }, [selectedRouteId]);
 
+  // Ghost-driver guard: prune markers whose driver stopped publishing
+  // (app closed) even if Firestore hasn't pushed a fresh snapshot lately.
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setMarkers((prev) => {
+        const next = prev.filter((m) => isLocationFresh(m.locationUpdatedAt));
+        return next.length === prev.length ? prev : next;
+      });
+    }, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
   // Re-center map when user location becomes available
   useEffect(() => {
     if (location && mapRef.current) {
