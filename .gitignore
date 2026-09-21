@@ -45,3 +45,10 @@ google-services.json
 # Freebuff IDE
 .freebuff/
 .vscode/
+
+# Supabase backend
+supabase/.temp/
+supabase/.branches/
+# Belt and braces: secrets live here and must never be committed
+supabase/.env.local
+supabase/.env

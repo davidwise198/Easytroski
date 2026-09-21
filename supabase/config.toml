@@ -1,0 +1,21 @@
+# ---------------------------------------------------------------------------
+# Supabase project configuration (functions only)
+#
+# Firestore and Firebase Auth stay the source of truth for data and identity —
+# Supabase is used purely as the backend runtime for payments.
+# ---------------------------------------------------------------------------
+
+project_id = "easytroski"
+
+[functions.payments]
+# Authenticated: the function verifies the caller's Firebase ID token itself.
+verify_jwt = false
+
+[functions.paystack-webhook]
+# Public by necessity — Paystack cannot present a Supabase JWT. Requests are
+# authenticated by HMAC-SHA512 signature instead.
+verify_jwt = false
+
+[functions.reap-expired]
+# Called by a schedule, not a user session.
+verify_jwt = false
