@@ -88,6 +88,10 @@ export default function PayBookingScreen() {
 
   // Never let a stale interval or a late response overwrite a finished state.
   const finishedRef = useRef(false);
+  /** True once a charge exists: the booking then belongs to the payment UI, so
+   *  a routine document update must not drop the passenger back to "review"
+   *  and invite a second payment. */
+  const chargeStartedRef = useRef(false);
   const markFinished = useCallback((next: Phase) => {
     finishedRef.current = true;
     setPhase(next);
@@ -128,9 +132,9 @@ export default function PayBookingScreen() {
           markFinished(data.cancelReason === "rejected_by_driver" ? "rejected" : "cancelled");
         } else if (data.paymentStatus === "paid" || data.status === "confirmed") {
           markFinished("paid");
-        } else if (data.paymentStatus === "failed") {
+        } else if (data.paymentStatus === "failed" && !chargeStartedRef.current) {
           markFinished("failed");
-        } else if (data.status === "awaiting_payment" && !finishedRef.current) {
+        } else if (data.status === "awaiting_payment" && !finishedRef.current && !chargeStartedRef.current) {
           setPhase("review");
         }
       },
@@ -277,10 +281,12 @@ export default function PayBookingScreen() {
     setBusy(true);
     setPhase("charging");
     try {
+      chargeStartedRef.current = true;
       const result = await initiateCharge(bookingId, momoProvider, payerPhone);
       applyChargeResult(result);
     } catch (error) {
       // A rejected charge must not leave the screen stuck in "charging".
+      chargeStartedRef.current = false;
       setPhase("review");
       showToast("error", "Payment", friendlyPaymentError(error));
     } finally {
@@ -290,6 +296,7 @@ export default function PayBookingScreen() {
 
   const handleSubmitOtp = useCallback(async () => {
     if (!bookingId) return;
+    chargeStartedRef.current = true;
     const code = otp.trim();
     if (!code) {
       showToast("error", "Enter the code", "Type the one-time code your wallet sent you.");
@@ -427,6 +434,7 @@ export default function PayBookingScreen() {
               title="Try again"
               onPress={() => {
                 finishedRef.current = false;
+                chargeStartedRef.current = false;
                 setPhase("review");
               }}
               style={styles.stateButton}

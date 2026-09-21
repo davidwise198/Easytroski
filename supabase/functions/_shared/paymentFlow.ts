@@ -96,7 +96,8 @@ export async function initiateChargeCore(input: {
     throw new ApiError("momo_number_invalid", "That Mobile Money number doesn't look right.", 400);
   }
 
-  const existing = latestPayment(await paymentsForBooking(booking.id));
+  const attachedPayments = await paymentsForBooking(booking.id);
+  const existing = latestPayment(attachedPayments);
   if (existing) {
     if (existing.data.status === "paid") {
       throw new ApiError("payment_already_paid", "This booking is already paid.", 409);
@@ -124,7 +125,13 @@ export async function initiateChargeCore(input: {
     }
   }
 
-  const reference = (booking.data.paymentRef as string) || referenceForBooking(booking.id);
+  // Paystack refuses to reuse a reference that already has a transaction, so a
+  // retry after a failed attempt gets a fresh one. Only failed attempts can
+  // reach here (paid and in-flight bookings returned above), so rotating can
+  // never orphan a payment that actually succeeded.
+  const baseReference = referenceForBooking(booking.id);
+  const attempt = attachedPayments.length;
+  const reference = attempt === 0 ? baseReference : `${baseReference}-A${attempt}`;
   const amountPesewas = Number(booking.data.totalPesewas || 0);
   if (!amountPesewas) throw new ApiError("unknown", "This booking has no amount.", 409);
 
