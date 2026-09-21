@@ -22,6 +22,7 @@ import { getPhotoURL, getUserProfile } from "../../src/services/profile";
 import { getPassengerBookings } from "../../src/services/transport";
 import { COLORS, SPACING } from "../../src/theme";
 import { Booking, BookingStatus } from "../../src/types/models";
+import { formatPesewas } from "../../src/utils/money";
 
 // ---------------------------------------------------------------------------
 // Animated wrapper for entrance
@@ -67,20 +68,24 @@ function FadeSlideIn({
   );
 }
 
-const ACTIVE_STATUSES: BookingStatus[] = ["pending", "confirmed", "picked_up"];
+const ACTIVE_STATUSES: BookingStatus[] = ["pending", "awaiting_payment", "confirmed", "picked_up"];
 
 function bookingStatusLabel(status: BookingStatus): string {
   switch (status) {
     case "pending":
-      return "Booking pending";
+      return "Waiting for the driver to accept";
+    case "awaiting_payment":
+      return "Driver accepted — payment needed";
     case "confirmed":
-      return "Driver confirmed — en route";
+      return "Booking confirmed — en route";
     case "picked_up":
       return "You're on board!";
     case "completed":
       return "Completed";
     case "cancelled":
       return "Cancelled";
+    case "expired":
+      return "Payment window closed";
     default:
       return status;
   }
@@ -185,23 +190,32 @@ export default function HomeScreen() {
     : bookings.length > 0
       ? "No active ride right now"
       : "Ready for your first ride?";
+  const awaitingPayment = activeBooking?.status === "awaiting_payment";
   const contextText = activeBooking
-    ? `You have ${activeBooking.seats} seat${activeBooking.seats > 1 ? "s" : ""} on this trip.`
+    ? awaitingPayment
+      ? `Driver accepted. Pay ${formatPesewas(activeBooking.totalPesewas)} to secure your ${activeBooking.seats} seat${activeBooking.seats > 1 ? "s" : ""}.`
+      : `You have ${activeBooking.seats} seat${activeBooking.seats > 1 ? "s" : ""} on this trip.`
     : bookings.length > 0
       ? "View your trip history anytime."
       : "Find a route and book your seat in minutes.";
   const contextAction = activeBooking
-    ? "Track"
+    ? awaitingPayment
+      ? "Pay now"
+      : "Track"
     : bookings.length > 0
       ? "View trips"
       : "Book now";
   const contextIcon = activeBooking
-    ? "map-marker-path"
+    ? awaitingPayment
+      ? "credit-card-clock-outline"
+      : "map-marker-path"
     : bookings.length > 0
       ? "history"
       : "seat";
   const contextRoute = activeBooking
-    ? "/map"
+    ? awaitingPayment && activeBooking.id
+      ? `/booking/pay?bookingId=${activeBooking.id}`
+      : "/map"
     : bookings.length > 0
       ? "/trips"
       : "/routes";

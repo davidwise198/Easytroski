@@ -31,6 +31,8 @@ import { useThemeColors } from "../../src/contexts/ThemeContext";
 import { useMemo } from "react";
 import { showToast } from "../../src/utils/toast";
 import { getFriendlyError } from "../../src/utils/firebaseErrors";
+import { formatPesewas } from "../../src/utils/money";
+import { friendlyPaymentError } from "../../src/services/payments";
 import {
   ActiveTripMarker,
   Route,
@@ -132,7 +134,13 @@ export default function PassengerMapScreen() {
   const [markers, setMarkers] = useState<ActiveTripMarker[]>([]);
   const [loadingTrips, setLoadingTrips] = useState(true);
   const [bookingTripId, setBookingTripId] = useState<string | null>(null);
-  const [lastBookingId, setLastBookingId] = useState<string | null>(null);  const [lastBookingStatus, setLastBookingStatus] = useState<string | null>(null);
+  const [lastBookingId, setLastBookingId] = useState<string | null>(null);
+  const [lastBookingStatus, setLastBookingStatus] = useState<string | null>(null);
+  // Latest booking document: fare, seats, payment window and refund state all
+  // come from here so the banner never has to guess.
+  const [bookingDoc, setBookingDoc] = useState<Record<string, any> | null>(null);
+  // Only announce a status change once, even if the doc updates again.
+  const toastedStatusRef = useRef<string | null>(null);
   const [cancelledMeta, setCancelledMeta] = useState<{ cancelledBy?: string; cancelReason?: string } | null>(null);
   const [cancellingBooking, setCancellingBooking] = useState(false);
   const [bookingSeats, setBookingSeats] = useState(1);
@@ -260,13 +268,32 @@ export default function PassengerMapScreen() {
       (snapshot) => {
         if (snapshot.exists()) {
           const data = snapshot.data();
+          setBookingDoc({ ...data, id: snapshot.id });
           setLastBookingStatus(data.status);
           setCancelledMeta({
             cancelledBy: data.cancelledBy,
             cancelReason: data.cancelReason,
           });
-          if (data.status === "confirmed") {
-            showToast("success", "Booking confirmed", "Your driver has confirmed your seat!");
+
+          // Announce each state once, not on every field change.
+          const isNewStatus = toastedStatusRef.current !== data.status;
+          toastedStatusRef.current = data.status;
+          if (!isNewStatus) return;
+
+          if (data.status === "awaiting_payment") {
+            showToast(
+              "success",
+              "Driver accepted",
+              "Complete payment to secure your seat."
+            );
+          } else if (data.status === "confirmed") {
+            showToast("success", "Payment received", "Your seat is confirmed. Have a safe trip!");
+          } else if (data.status === "expired") {
+            showToast(
+              "info",
+              "Payment window closed",
+              "Your seats were released. You can book another ride."
+            );
           } else if (data.status === "cancelled") {
             const msg =
               data.cancelledBy === "passenger"
@@ -302,8 +329,13 @@ export default function PassengerMapScreen() {
 
       // One active booking at a time — while a booking is pending or
       // confirmed, the passenger cannot place another one.
-      if (lastBookingId && (lastBookingStatus === "pending" || lastBookingStatus === "confirmed")) {
-        showToast("info", "Booking in progress", "You already have an active booking. Cancel it before booking another ride.");
+      if (
+        lastBookingId &&
+        (lastBookingStatus === "pending" ||
+          lastBookingStatus === "awaiting_payment" ||
+          lastBookingStatus === "confirmed")
+      ) {
+        showToast("info", "Booking in progress", "You already have an active booking. Finish or cancel it before booking another ride.");
         return;
       }
 
@@ -516,11 +548,12 @@ export default function PassengerMapScreen() {
     setCancellingBooking(true);
     try {
       await cancelBooking(lastBookingId, "passenger", trackedDriverId ?? undefined);
+      toastedStatusRef.current = "cancelled";
       setLastBookingStatus("cancelled");
-      setCancelledMeta({ cancelledBy: "passenger", cancelReason: "passenger_cancel" });
+      setCancelledMeta({ cancelledBy: "passenger", cancelReason: "cancelled_by_passenger" });
       showToast("info", "Booking cancelled", "Your booking has been cancelled.");
-    } catch {
-      showToast("error", "Cancel failed", "Could not cancel booking. Please try again.");
+    } catch (error) {
+      showToast("error", "Cancel failed", friendlyPaymentError(error));
     } finally {
       setCancellingBooking(false);
     }
@@ -540,6 +573,11 @@ export default function PassengerMapScreen() {
         return "Your trip ended. Try booking another ride.";
       case "driver_no_response":
         return "The driver didn't respond in time. Try another ride.";
+      case "payment_expired":
+        return "Payment wasn't completed in time, so your seats were released.";
+      case "cancelled_by_driver":
+        return "The driver cancelled this ride. Any payment you made is being refunded.";
+      case "rejected_by_driver":
       default:
         return "Booking REJECTED by driver. Try booking another ride.";
     }
@@ -769,36 +807,61 @@ export default function PassengerMapScreen() {
             ds.bookingBanner,
             { top: lastBookingStatus === "confirmed" ? 300 : 240 },
             lastBookingStatus === "confirmed" && styles.bookingBannerSuccess,
-            lastBookingStatus === "cancelled" && styles.bookingBannerError,
+            lastBookingStatus === "awaiting_payment" && styles.bookingBannerAction,
+            (lastBookingStatus === "cancelled" || lastBookingStatus === "expired") && styles.bookingBannerError,
           ]}>
             <MaterialCommunityIcons
               name={
                 lastBookingStatus === "confirmed" ? "check-circle" :
-                lastBookingStatus === "cancelled" ? "close-circle" :
+                lastBookingStatus === "awaiting_payment" ? "credit-card-clock-outline" :
+                (lastBookingStatus === "cancelled" || lastBookingStatus === "expired") ? "close-circle" :
                 "clock-outline"
               }
               size={18}
               color={
                 lastBookingStatus === "confirmed" ? COLORS.success :
-                lastBookingStatus === "cancelled" ? COLORS.danger :
+                lastBookingStatus === "awaiting_payment" ? COLORS.primary :
+                (lastBookingStatus === "cancelled" || lastBookingStatus === "expired") ? COLORS.danger :
                 COLORS.warning
               }
             />
             <AppText variant="caption" style={[styles.bookingBannerText, ds.bookingBannerText]}>
               {lastBookingStatus === "confirmed"
-                ? `Booking ACCEPTED — ${bookingSeats} seat${bookingSeats > 1 ? 's' : ''} reserved.${remainingSeats !== null ? ` ${remainingSeats} seat${remainingSeats !== 1 ? 's' : ''} remaining.` : ''} Your driver is on the way.`
-                : lastBookingStatus === "cancelled"
-                  ? cancelledBannerText(cancelledMeta)
-                  : "Waiting for the driver to ACCEPT or REJECT your booking…"}
+                ? `Seat confirmed — ${bookingDoc?.seats ?? bookingSeats} seat${(bookingDoc?.seats ?? bookingSeats) > 1 ? 's' : ''} paid for.${remainingSeats !== null ? ` ${remainingSeats} seat${remainingSeats !== 1 ? 's' : ''} remaining.` : ''} Your driver is on the way.`
+                : lastBookingStatus === "awaiting_payment"
+                  ? `Driver ACCEPTED — pay ${formatPesewas(bookingDoc?.totalPesewas)} to reserve your seat${(bookingDoc?.seats ?? 1) > 1 ? 's' : ''}.`
+                  : lastBookingStatus === "expired"
+                    ? "Payment wasn't completed in time, so your seats were released."
+                    : lastBookingStatus === "cancelled"
+                      ? cancelledBannerText(cancelledMeta)
+                      : "Waiting for the driver to ACCEPT or REJECT your booking…"}
             </AppText>
-            {lastBookingStatus === "cancelled" ? (
+            {lastBookingStatus === "awaiting_payment" ? (
+              <View style={styles.bannerActions}>
+                <Pressable
+                  style={({ pressed }) => [styles.payNowBtn, pressed && { opacity: 0.85 }]}
+                  onPress={() => {
+                    if (lastBookingId) router.push(`/booking/pay?bookingId=${lastBookingId}`);
+                  }}
+                >
+                  <AppText variant="caption" style={styles.payNowText}>Pay now</AppText>
+                </Pressable>
+                <Pressable
+                  style={({ pressed }) => [styles.cancelBookingBtn, pressed && { opacity: 0.7 }]}
+                  onPress={() => void handleCancelBooking()}
+                  disabled={cancellingBooking}
+                >
+                  <MaterialCommunityIcons name="close" size={14} color={COLORS.danger} />
+                </Pressable>
+              </View>
+            ) : (lastBookingStatus === "cancelled" || lastBookingStatus === "expired") ? (
               <Pressable
                 style={({ pressed }) => [styles.dismissBookingBtn, pressed && { opacity: 0.7 }]}
                 onPress={handleDismissBooking}
               >
                 <MaterialCommunityIcons name="close" size={16} color={COLORS.textSecondary} />
               </Pressable>
-            ) : (lastBookingStatus === "pending" || lastBookingStatus === "confirmed") ? (
+            ) : lastBookingStatus === "pending" ? (
               <Pressable
                 style={({ pressed }) => [styles.cancelBookingBtn, pressed && { opacity: 0.7 }]}
                 onPress={() => void handleCancelBooking()}
@@ -1213,6 +1276,30 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "#FEE2E2",
+  },
+
+  /** Payment is owed: highlight the banner so the CTA is unmissable. */
+  bookingBannerAction: {
+    borderLeftWidth: 3,
+    borderLeftColor: COLORS.primary,
+  },
+
+  bannerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+  },
+
+  payNowBtn: {
+    paddingVertical: 6,
+    paddingHorizontal: SPACING.md,
+    borderRadius: 10,
+    backgroundColor: COLORS.primary,
+  },
+
+  payNowText: {
+    color: "#FFFFFF",
+    fontWeight: "700",
   },
 
   // Loading

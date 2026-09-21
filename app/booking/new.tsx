@@ -27,7 +27,7 @@ export default function NewBookingScreen() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [booked, setBooked] = useState(false);
+  const [bookedId, setBookedId] = useState<string | null>(null);
   const { colors } = useThemeColors();
   const ds = useMemo(() => ({
     title: { color: colors.text },
@@ -96,7 +96,7 @@ export default function NewBookingScreen() {
         // Fall through with (0, 0) — same as before rather than blocking the booking
       }
 
-      await createBooking({
+      const bookingId = await createBooking({
         passengerId,
         driverId: trip.driverId,
         routeId: route.id,
@@ -112,7 +112,7 @@ export default function NewBookingScreen() {
         },
         seats: 1,
       });
-      setBooked(true);
+      setBookedId(bookingId);
       showToast("success", "Booking sent", `Your driver will confirm the ${route.origin} → ${route.destination} trip shortly.`);
     } catch (error) {
       showToast(
@@ -153,7 +153,7 @@ export default function NewBookingScreen() {
     );
   }
 
-  if (booked) {
+  if (bookedId) {
     return (
       <AuthGate>
         <AppBackground>
@@ -163,9 +163,20 @@ export default function NewBookingScreen() {
             </View>
             <AppText variant="heading" style={[styles.stateTitle, ds.stateTitle]}>Booking sent!</AppText>
             <AppText variant="body" style={[styles.stateText, ds.stateText]}>
-              {route.origin} → {route.destination}{"\n"}Your driver will confirm shortly.
+              {route.origin} → {route.destination}{"\n"}
+              Waiting for the driver to accept. You'll pay once they accept.
             </AppText>
-            <PrimaryButton title="Back to dashboard" onPress={() => router.replace("/home")} style={styles.stateButton} />
+            <PrimaryButton
+              title="Track this booking"
+              onPress={() => router.replace(`/booking/pay?bookingId=${bookedId}`)}
+              style={styles.stateButton}
+            />
+            <PrimaryButton
+              title="Back to dashboard"
+              variant="outline"
+              onPress={() => router.replace("/home")}
+              style={styles.stateButton}
+            />
           </View>
         </AppBackground>
       </AuthGate>
@@ -183,7 +194,7 @@ export default function NewBookingScreen() {
           <AppText variant="caption" style={styles.eyebrow}>BOOK YOUR RIDE</AppText>
           <AppText variant="title" style={[styles.title, ds.title]}>{route.origin} → {route.destination}</AppText>
           <AppText variant="body" style={[styles.subtitle, ds.subtitle]}>
-            Book 1 seat on this route. Your driver will confirm the trip.
+            Book 1 seat on this route. Your driver confirms first — you only pay after they accept.
           </AppText>
 
           <View style={styles.routeCard}>

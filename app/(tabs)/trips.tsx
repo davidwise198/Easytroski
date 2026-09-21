@@ -35,6 +35,8 @@ function bookingStatusLabel(status: BookingStatus): string {
   switch (status) {
     case "pending":
       return "Pending";
+    case "awaiting_payment":
+      return "Awaiting payment";
     case "confirmed":
       return "Confirmed";
     case "picked_up":
@@ -43,6 +45,8 @@ function bookingStatusLabel(status: BookingStatus): string {
       return "Completed";
     case "cancelled":
       return "Cancelled";
+    case "expired":
+      return "Expired";
     default:
       return status;
   }
@@ -52,6 +56,8 @@ function bookingStatusColor(status: BookingStatus): string {
   switch (status) {
     case "pending":
       return COLORS.warning;
+    case "awaiting_payment":
+      return COLORS.accent;
     case "confirmed":
       return COLORS.primary;
     case "picked_up":
@@ -59,6 +65,7 @@ function bookingStatusColor(status: BookingStatus): string {
     case "completed":
       return COLORS.success;
     case "cancelled":
+    case "expired":
       return COLORS.danger;
     default:
       return COLORS.textSecondary;
@@ -69,6 +76,8 @@ function bookingStatusIcon(status: BookingStatus): string {
   switch (status) {
     case "pending":
       return "clock-outline";
+    case "awaiting_payment":
+      return "credit-card-clock-outline";
     case "confirmed":
       return "check-circle-outline";
     case "picked_up":
@@ -76,6 +85,7 @@ function bookingStatusIcon(status: BookingStatus): string {
     case "completed":
       return "check-circle";
     case "cancelled":
+    case "expired":
       return "close-circle";
     default:
       return "help-circle-outline";
