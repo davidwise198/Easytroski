@@ -253,6 +253,11 @@ MIN_PAYOUT_PESEWAS=100
 DRIVER_STALE_MINUTES=5
 ```
 
+Paste the secret values exactly as they appear in the service-account JSON — the
+backend extracts the PEM between its BEGIN/END markers and matches the email
+address, so a stray surrounding quote, a trailing comma or `\n` escapes are all
+tolerated. Secret *names*, however, must match the table above exactly.
+
 Deploy:
 
 ```bash

@@ -31,11 +31,57 @@ export function isLiveMode(): boolean {
 export const FIREBASE_PROJECT_ID = () => read("FIREBASE_PROJECT_ID");
 
 /** Service-account credentials used for privileged Firestore writes. */
-export const FIREBASE_CLIENT_EMAIL = () => read("FIREBASE_CLIENT_EMAIL");
+/**
+ * Secrets get pasted with their surrounding quotes surprisingly often — the
+ * service-account JSON shows the private key as a quoted string, and it's easy
+ * to include one quote and not the other. A quote is never valid inside a PEM
+ * or an email, so strip them instead of failing on a key that is otherwise
+ * correct.
+ */
+function unquote(value: string): string {
+  const trimmed = value.trim();
+  if (
+    trimmed.length >= 2 &&
+    ((trimmed.startsWith('"') && trimmed.endsWith('"')) ||
+      (trimmed.startsWith("'") && trimmed.endsWith("'")))
+  ) {
+    return trimmed.slice(1, -1).trim();
+  }
+  return trimmed.replace(/^['"]+/, "").replace(/['"]+$/, "").trim();
+}
 
-/** PEM private key; supports "\n" escapes as pasted into a secrets file. */
+/**
+ * The service-account email, pulled out of whatever was pasted. A value copied
+ * straight from the JSON can arrive as `...gserviceaccount.com",` — quotes and
+ * a trailing comma included — so match the address itself rather than trusting
+ * the value to be bare.
+ */
+export const FIREBASE_CLIENT_EMAIL = () => {
+  const raw = read("FIREBASE_CLIENT_EMAIL");
+  const match = raw.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/);
+  if (match) return match[0];
+  const fallback = unquote(raw);
+  if (!fallback) throw new Error("FIREBASE_CLIENT_EMAIL is not a usable address");
+  return fallback;
+};
+
+/**
+ * PEM private key, extracted by its own BEGIN/END markers.
+ *
+ * Secrets pasted from a JSON file easily pick up a leading quote, a trailing
+ * quote-comma, or both. Only the PEM span matters, so take exactly that and
+ * discard the surrounding punctuation. "\n" escapes and real newlines are both
+ * accepted.
+ */
 export function firebasePrivateKey(): string {
-  return read("FIREBASE_PRIVATE_KEY").replace(/\\n/g, "\n").trim();
+  const raw = read("FIREBASE_PRIVATE_KEY").replace(/\\n/g, "\n");
+  const match = raw.match(/-----BEGIN [A-Z ]+-----[\s\S]*?-----END [A-Z ]+-----/);
+  if (match) return match[0].trim();
+  const fallback = unquote(raw);
+  if (!fallback.includes("BEGIN") || !fallback.includes("END")) {
+    throw new Error("FIREBASE_PRIVATE_KEY is not a PEM private key");
+  }
+  return fallback;
 }
 
 // ─── Business configuration (all overridable without a code change) ───────

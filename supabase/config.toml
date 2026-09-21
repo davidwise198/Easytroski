@@ -5,7 +5,7 @@
 # Supabase is used purely as the backend runtime for payments.
 # ---------------------------------------------------------------------------
 
-project_id = "easytroski"
+project_id = "puobujzoxmuwgsybawzm"
 
 [functions.payments]
 # Authenticated: the function verifies the caller's Firebase ID token itself.
