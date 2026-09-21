@@ -35,6 +35,8 @@ import { useAuth } from "../src/contexts/AuthContext";
 import AuthGate from "../src/components/AuthGate";
 import { useMemo } from "react";
 import { showToast } from "../src/utils/toast";
+import { formatPesewas } from "../src/utils/money";
+import { adminResolveRefundViaApi } from "../src/services/payments";
 import { Route } from "../src/types/models";
 
 type Tab = "stats" | "drivers" | "users" | "vehicles" | "bookings" | "trips" | "routes";
@@ -70,6 +72,20 @@ function EditModal({
       </Pressable>
     </Modal>
   );
+}
+
+/**
+ * Parse a fare typed in Ghana Cedis into integer pesewas.
+ * Returns null on anything that isn't a positive amount, so a typo can never
+ * become a price the backend silently charges.
+ */
+function parseFareToPesewas(raw: string): number | null {
+  const cleaned = (raw || "").replace(/[^\d.]/g, "");
+  if (!cleaned) return null;
+  const cedis = Number(cleaned);
+  if (!Number.isFinite(cedis) || cedis <= 0) return null;
+  const pesewas = Math.round(cedis * 100);
+  return pesewas > 0 ? pesewas : null;
 }
 
 // ---------------------------------------------------------------------------
@@ -110,6 +126,7 @@ export default function AdminDashboardScreen() {
   const [origin, setOrigin] = useState("");
   const [destination, setDestination] = useState("");
   const [stopsText, setStopsText] = useState("");
+  const [fareText, setFareText] = useState("");
   const [saving, setSaving] = useState(false);
 
   // Edit state
@@ -181,6 +198,11 @@ export default function AdminDashboardScreen() {
       return;
     }
     const stops = stopsText.split(",").map((s) => s.trim()).filter(Boolean);
+    const farePesewas = parseFareToPesewas(fareText);
+    if (farePesewas === null) {
+      showToast("warning", "Check the fare", "Enter the fare per seat in Ghana Cedis, e.g. 10 or 10.50.");
+      return;
+    }
     const slug = `${origin.trim().toLowerCase().replace(/\s+/g, "-")}-${destination.trim().toLowerCase().replace(/\s+/g, "-")}`;
 
     setSaving(true);
@@ -189,6 +211,8 @@ export default function AdminDashboardScreen() {
         origin: origin.trim(),
         destination: destination.trim(),
         stops,
+        // Fare per seat in pesewas — the backend charges from this field.
+        farePesewas,
         active: true,
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
@@ -197,6 +221,7 @@ export default function AdminDashboardScreen() {
       setOrigin("");
       setDestination("");
       setStopsText("");
+      setFareText("");
       setShowAddForm(false);
       void loadAllData();
     } catch (error) {
@@ -375,9 +400,27 @@ export default function AdminDashboardScreen() {
 
   // ── Route CRUD ──
 
+  /**
+   * Settle a refund by hand. Only needed when Paystack reports one as
+   * failed/needs_attention (wrong wallet, closed account, disputed charge) —
+   * successful refunds resolve themselves through the webhook.
+   */
+  const handleResolveRefund = async (bookingId: string, outcome: "processed" | "failed") => {
+    setSaving(true);
+    try {
+      await adminResolveRefundViaApi({ bookingId, outcome });
+      showToast("success", "Refund updated", `Marked as ${outcome}.`);
+      void loadAllData(true);
+    } catch (error) {
+      showToast("error", "Update failed", "Could not update the refund.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const handleSaveRoute = async (
     routeId: string,
-    fields: { origin: string; destination: string; stops: string[] }
+    fields: { origin: string; destination: string; stops: string[]; farePesewas: number }
   ) => {
     setEditSaving(true);
     try {
@@ -695,7 +738,13 @@ export default function AdminDashboardScreen() {
                           {booking.pickupLocation?.address || "Pickup"} → {booking.dropOffLocation?.address || "Drop-off"}
                         </AppText>
                         <AppText variant="caption" style={[styles.listSubtitle, ds.listSubtitle]}>
-                          {booking.seats || 1} seat · <AppText variant="caption" style={{ color: statusColor(booking.status), fontWeight: "700" }}>{booking.status}</AppText>
+                          {booking.seats || 1} seat ·{" "}
+                          <AppText variant="caption" style={{ color: statusColor(booking.status), fontWeight: "700" }}>{booking.status}</AppText>
+                          {booking.totalPesewas ? ` · ${formatPesewas(booking.totalPesewas)}` : ""}
+                          {booking.paymentStatus ? ` · ${booking.paymentStatus}` : ""}
+                          {booking.refund?.status && booking.refund.status !== "none"
+                            ? ` · refund ${booking.refund.status}`
+                            : ""}
                         </AppText>
                       </View>
                       <View style={styles.rowActions}>
@@ -712,6 +761,27 @@ export default function AdminDashboardScreen() {
                           <MaterialCommunityIcons name="trash-can-outline" size={14} color={COLORS.white} />
                         </Pressable>
                       </View>
+                      {(booking.refund?.status === "needs_attention" || booking.refund?.status === "failed") && (
+                        <View style={styles.refundRow}>
+                          <AppText variant="caption" style={[styles.listSubtitle, ds.listSubtitle]}>
+                            Refund needs attention — settle it once the passenger has been paid.
+                          </AppText>
+                          <View style={styles.rowActions}>
+                            <Pressable
+                              style={[styles.actionBtn, { backgroundColor: COLORS.success }]}
+                              onPress={() => void handleResolveRefund(booking.id, "processed")}
+                            >
+                              <MaterialCommunityIcons name="check" size={14} color={COLORS.white} />
+                            </Pressable>
+                            <Pressable
+                              style={[styles.actionBtn, { backgroundColor: COLORS.danger }]}
+                              onPress={() => void handleResolveRefund(booking.id, "failed")}
+                            >
+                              <MaterialCommunityIcons name="close" size={14} color={COLORS.white} />
+                            </Pressable>
+                          </View>
+                        </View>
+                      )}
                     </View>
                   ))
                 )}
@@ -782,7 +852,8 @@ export default function AdminDashboardScreen() {
                     <GlassInput placeholder="Origin (e.g. Omanjor)" icon="map-marker-account" value={origin} onChangeText={setOrigin} />
                     <GlassInput placeholder="Destination (e.g. Lapaz (Race Course))" icon="map-marker" value={destination} onChangeText={setDestination} />
                     <GlassInput placeholder="Stops (comma separated)" icon="map-marker-path" value={stopsText} onChangeText={setStopsText} />
-                    <PrimaryButton title={saving ? "Adding..." : "Add route"} onPress={() => void handleAddRoute()} disabled={saving || !origin.trim() || !destination.trim()} />
+                    <GlassInput placeholder="Fare per seat in GHS (e.g. 10)" icon="cash" value={fareText} onChangeText={setFareText} keyboardType="decimal-pad" />
+                    <PrimaryButton title={saving ? "Adding..." : "Add route"} onPress={() => void handleAddRoute()} disabled={saving || !origin.trim() || !destination.trim() || !fareText.trim()} />
                   </View>
                 )}
 
@@ -794,7 +865,10 @@ export default function AdminDashboardScreen() {
                       </View>
                       <View style={styles.listCopy}>
                         <AppText variant="heading" style={[styles.listTitle, ds.listTitle]}>{route.origin} → {route.destination}</AppText>
-                        <AppText variant="caption" style={[styles.listSubtitle, ds.listSubtitle]}>{route.stops?.length || 0} stops · {route.active ? "Active" : "Inactive"}</AppText>
+                        <AppText variant="caption" style={[styles.listSubtitle, ds.listSubtitle]}>
+                          {route.stops?.length || 0} stops · {route.active ? "Active" : "Inactive"} · 
+                          {route.farePesewas ? formatPesewas(route.farePesewas) + " per seat" : "No fare set"}
+                        </AppText>
                       </View>
                       <View style={styles.rowActions}>
                         <Pressable
@@ -953,28 +1027,36 @@ function RouteEditForm({
   saving,
 }: {
   route: any;
-  onSave: (fields: { origin: string; destination: string; stops: string[] }) => void;
+  onSave: (fields: { origin: string; destination: string; stops: string[]; farePesewas: number }) => void;
   saving: boolean;
 }) {
   const [origin, setOrigin] = useState(route.origin || "");
   const [destination, setDestination] = useState(route.destination || "");
   const [stopsText, setStopsText] = useState<string>((route.stops || []).join(", "));
+  const [fareText, setFareText] = useState<string>(
+    route.farePesewas ? String(route.farePesewas / 100) : ""
+  );
+  const farePesewas = parseFareToPesewas(fareText);
 
   return (
     <View style={{ gap: SPACING.sm }}>
       <GlassInput placeholder="Origin (e.g. Omanjor)" icon="map-marker-account" value={origin} onChangeText={setOrigin} />
       <GlassInput placeholder="Destination (e.g. Lapaz (Race Course))" icon="map-marker" value={destination} onChangeText={setDestination} />
       <GlassInput placeholder="Stops (comma separated)" icon="map-marker-path" value={stopsText} onChangeText={setStopsText} />
+      <GlassInput placeholder="Fare per seat in GHS (e.g. 10)" icon="cash" value={fareText} onChangeText={setFareText} keyboardType="decimal-pad" />
       <PrimaryButton
         title={saving ? "Saving..." : "Save changes"}
         onPress={() =>
-          onSave({
-            origin: origin.trim(),
-            destination: destination.trim(),
-            stops: stopsText.split(",").map((s) => s.trim()).filter(Boolean),
-          })
+          farePesewas === null
+            ? showToast("warning", "Check the fare", "Enter the fare per seat in Ghana Cedis, e.g. 10 or 10.50.")
+            : onSave({
+                origin: origin.trim(),
+                destination: destination.trim(),
+                stops: stopsText.split(",").map((s) => s.trim()).filter(Boolean),
+                farePesewas,
+              })
         }
-        disabled={saving || !origin.trim() || !destination.trim()}
+        disabled={saving || !origin.trim() || !destination.trim() || farePesewas === null}
       />
     </View>
   );
@@ -1071,6 +1153,10 @@ const styles = StyleSheet.create({
   listCopy: { flex: 1 },
   listTitle: { color: COLORS.navy, fontSize: 14, lineHeight: 19 },
   listSubtitle: { color: COLORS.textSecondary, marginTop: 2 },
+  refundRow: {
+    marginTop: SPACING.sm,
+    gap: SPACING.sm,
+  },
   rowActions: { flexDirection: "row", gap: SPACING.xs },
   actionBtn: {
     width: 30, height: 30, borderRadius: 10,
