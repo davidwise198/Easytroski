@@ -26,9 +26,10 @@ import {
   subscribeDriverBookings,
   getDriverPickupLocations,
 } from "../../src/services/map";
-import { getActiveRoutes, startTrip, endTrip, confirmBooking, cancelBooking, updateBookingStatus, updateDriverSeats, updateDriverLocation, getDriverDefaultRoute } from "../../src/services/transport";
+import { getActiveRoutes, startTrip, endTrip, confirmBooking, rejectBooking, cancelBooking, updateBookingStatus, updateDriverSeats, updateDriverLocation, getDriverDefaultRoute } from "../../src/services/transport";
 import { fetchRoutePath, RoutePath } from "../../src/services/directions";
 import { haversineMeters, formatDistance, formatEta, etaFromDistance } from "../../src/utils/geo";
+import { formatPesewas } from "../../src/utils/money";
 import { COLORS, SPACING } from "../../src/theme";
 import { useThemeColors } from "../../src/contexts/ThemeContext";
 import { useMemo } from "react";
@@ -469,7 +470,7 @@ export default function DriverMapScreen() {
         setBookings((prev) =>
           prev.map((b) => (b.id === bookingId ? { ...b, status: "confirmed" } : b))
         );
-        showToast("success", "Booking confirmed", "Passenger has been notified.");
+        showToast("success", "Booking accepted", "Passenger is paying now — you'll see Paid when done.");
       } catch (error) {
         console.error("Confirm booking error:", error);
         showToast("error", "Failed to confirm", "Please try again.");
@@ -486,13 +487,20 @@ export default function DriverMapScreen() {
       }
       const booking = bookings.find((b: any) => b.id === bookingId);
       try {
-        await cancelBooking(
-          bookingId,
-          user?.uid ?? "driver",
-          user?.uid,
-          booking?.passengerId,
-          activeTrip ? `${activeTrip.origin || "Origin"} → ${activeTrip.destination || "Destination"}` : undefined
-        );
+        // An unanswered request is a REJECTION — no money has moved, so the
+        // seats are simply released. Once the passenger has paid, the same tap
+        // becomes a driver CANCELLATION, which is what triggers a refund.
+        if (booking && booking.status === "pending" && booking.paymentStatus !== "paid") {
+          await rejectBooking(bookingId);
+        } else {
+          await cancelBooking(
+            bookingId,
+            user?.uid ?? "driver",
+            user?.uid,
+            booking?.passengerId,
+            activeTrip ? `${activeTrip.origin || "Origin"} → ${activeTrip.destination || "Destination"}` : undefined
+          );
+        }
         setBookings((prev) =>
           prev.map((b) => (b.id === bookingId ? { ...b, status: "cancelled" } : b))
         );
@@ -913,11 +921,13 @@ export default function DriverMapScreen() {
                                   backgroundColor:
                                     booking.status === "confirmed"
                                       ? COLORS.success
-                                      : booking.status === "cancelled"
+                                      : booking.status === "cancelled" || booking.status === "expired"
                                         ? COLORS.danger
                                         : booking.status === "completed"
                                           ? COLORS.primary
-                                          : COLORS.warning,
+                                          : booking.status === "awaiting_payment"
+                                            ? COLORS.accent
+                                            : COLORS.warning,
                                 },
                               ]}
                             >
@@ -925,15 +935,36 @@ export default function DriverMapScreen() {
                                 {booking.status === "confirmed"
                                   ? "Confirmed"
                                   : booking.status === "cancelled"
-                                    ? "Rejected"
-                                    : booking.status === "completed"
-                                      ? "Dropped off"
-                                      : "Pending"}
+                                    ? booking.cancelReason === "rejected_by_driver"
+                                      ? "Rejected"
+                                      : "Cancelled"
+                                    : booking.status === "expired"
+                                      ? "Expired"
+                                      : booking.status === "completed"
+                                        ? "Dropped off"
+                                        : booking.status === "awaiting_payment"
+                                          ? "Awaiting payment"
+                                          : "Pending"}
                               </AppText>
                             </View>
                             <AppText variant="caption" style={styles.bookingSeatsInline}>
                               {booking.seats || 1} seat{(booking.seats || 1) > 1 ? "s" : ""}
                             </AppText>
+                            {booking.paymentStatus === "paid" ? (
+                              <View style={styles.paidBadge}>
+                                <MaterialCommunityIcons name="cash-check" size={12} color={COLORS.white} />
+                                <AppText variant="caption" style={styles.paidBadgeText}>
+                                  Paid
+                                </AppText>
+                              </View>
+                            ) : booking.status === "awaiting_payment" || booking.status === "pending" ? (
+                              <View style={styles.unpaidBadge}>
+                                <MaterialCommunityIcons name="clock-outline" size={12} color={COLORS.accent} />
+                                <AppText variant="caption" style={styles.unpaidBadgeText}>
+                                  Unpaid
+                                </AppText>
+                              </View>
+                            ) : null}
                           </View>
                         </View>
                       </View>
@@ -957,6 +988,14 @@ export default function DriverMapScreen() {
                               Accept
                             </AppText>
                           </Pressable>
+                        </View>
+                      )}
+                      {booking.status === "awaiting_payment" && (
+                        <View style={styles.paymentWaitRow}>
+                          <MaterialCommunityIcons name="timer-sand" size={14} color={COLORS.accent} />
+                          <AppText variant="caption" style={styles.paymentWaitText}>
+                            Waiting for this passenger to pay. Pick up only once it shows Paid.
+                          </AppText>
                         </View>
                       )}
                       {booking.status === "confirmed" && (
@@ -1090,6 +1129,15 @@ export default function DriverMapScreen() {
                     {alertDistanceM != null ? " • " + formatDistance(alertDistanceM) + " away" : ""}
                   </AppText>
                 </View>
+                {alertBooking.totalPesewas ? (
+                  <View style={styles.alertMetaRow}>
+                    <MaterialCommunityIcons name="cash-multiple" size={16} color={COLORS.warning} />
+                    <AppText variant="caption" style={styles.alertMetaText}>
+                      {formatPesewas(alertBooking.totalPesewas)} total — your share is paid into your
+                      wallet after the ride.
+                    </AppText>
+                  </View>
+                ) : null}
               </View>
               <View style={styles.alertActions}>
                 <Pressable
@@ -1467,6 +1515,46 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   bookingSeatsInline: {
+    color: COLORS.textSecondary,
+    fontSize: 11,
+  },
+  paidBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    backgroundColor: COLORS.success,
+  },
+  paidBadgeText: {
+    color: COLORS.white,
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  unpaidBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: COLORS.accent,
+  },
+  unpaidBadgeText: {
+    color: COLORS.accent,
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  paymentWaitRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+    marginTop: SPACING.sm,
+  },
+  paymentWaitText: {
+    flex: 1,
     color: COLORS.textSecondary,
     fontSize: 11,
   },

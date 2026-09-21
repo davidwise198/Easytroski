@@ -14,6 +14,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import * as Location from "expo-location";
 import { router } from "expo-router";
 import { activateKeepAwakeAsync, deactivateKeepAwake } from "expo-keep-awake";
+import { doc, onSnapshot } from "firebase/firestore";
 
 import AppBackground from "../../src/components/ui/AppBackground";
 import AppText from "../../src/components/ui/AppText";
@@ -33,9 +34,31 @@ import {
   selfHealAfterRestart,
 } from "../../src/services/transport";
 import { getUserProfile, getPhotoURL } from "../../src/services/profile";
+import { db } from "../../src/services/firebase";
+import {
+  formatCutoffHour,
+  friendlyPaymentError,
+  requestPayout,
+} from "../../src/services/payments";
+import { formatPesewas } from "../../src/utils/money";
 import { COLORS, SPACING } from "../../src/theme";
 import { Route, Trip } from "../../src/types/models";
 import { showToast } from "../../src/utils/toast";
+
+/** Wallet buckets written by the backend; the app only ever reads them. */
+const EMPTY_WALLET = {
+  withdrawablePesewas: 0,
+  pendingPesewas: 0,
+  lifetimePesewas: 0,
+  momoProvider: null as string | null,
+  momoNumber: null as string | null,
+};
+
+const MOMO_LABELS: Record<string, string> = {
+  mtn: "MTN MoMo",
+  vod: "Telecel Cash",
+  atl: "AT Money",
+};
 
 // ---------------------------------------------------------------------------
 // Pulse dot for online status
@@ -130,6 +153,8 @@ export default function DriverDashboardScreen() {
   const [ending, setEnding] = useState(false);
   const [profile, setProfile] = useState<Record<string, any> | null>(null);
   const [seatCount, setSeatCount] = useState(12);
+  const [wallet, setWallet] = useState(EMPTY_WALLET);
+  const [payoutBusy, setPayoutBusy] = useState(false);
 
   // Fetch user profile
   useEffect(() => {
@@ -137,6 +162,47 @@ export default function DriverDashboardScreen() {
       getUserProfile(user.uid).then(setProfile).catch(() => {});
     }
   }, [user?.uid]);
+
+  // Wallet balances live on the driver document and are backend-owned, so we
+  // simply mirror them — the app can never credit itself.
+  useEffect(() => {
+    const driverId = user?.uid;
+    if (!driverId) return;
+    const unsub = onSnapshot(
+      doc(db, "drivers", driverId),
+      (snap) => {
+        const data = snap.data();
+        if (!data) return;
+        setWallet({
+          withdrawablePesewas: Number(data.walletBalancePesewas || 0),
+          pendingPesewas: Number(data.pendingEarningsPesewas || 0),
+          lifetimePesewas: Number(data.lifetimeEarningsPesewas || 0),
+          momoProvider: (data.momoProvider as string) ?? null,
+          momoNumber: (data.momoNumber as string) ?? null,
+        });
+      },
+      () => {}
+    );
+    return unsub;
+  }, [user?.uid]);
+
+  const handleWithdraw = async () => {
+    if (payoutBusy) return;
+    setPayoutBusy(true);
+    try {
+      const result = await requestPayout();
+      showToast(
+        "success",
+        "Withdrawal requested",
+        result.message ||
+          `${formatPesewas(result.amountPesewas)} is on its way to your Mobile Money wallet.`
+      );
+    } catch (error) {
+      showToast("error", "Withdrawal", friendlyPaymentError(error));
+    } finally {
+      setPayoutBusy(false);
+    }
+  };
 
   // Check for active trip on mount
   useEffect(() => {
@@ -500,6 +566,73 @@ export default function DriverDashboardScreen() {
               style={styles.startButton}
             />
           )}
+
+          {/* ─── Earnings ───
+              Deliberately last: money is checked between trips, never while
+              driving, so it can't compete with the trip controls. */}
+          <View style={[styles.walletCard, ds.seatCounterCard]}>
+            <View style={styles.walletHeader}>
+              <View style={styles.walletHeaderLeft}>
+                <MaterialCommunityIcons name="wallet-outline" size={20} color={COLORS.primary} />
+                <AppText variant="caption" style={[styles.walletEyebrow, ds.secondary]}>
+                  EARNINGS
+                </AppText>
+              </View>
+              <AppText variant="caption" style={[styles.walletHint, ds.secondary]}>
+                Withdrawals open at {formatCutoffHour()}
+              </AppText>
+            </View>
+
+            <View style={styles.walletBalanceRow}>
+              <AppText variant="title" style={[styles.walletBalance, ds.text]}>
+                {formatPesewas(wallet.withdrawablePesewas)}
+              </AppText>
+              <AppText variant="caption" style={[styles.walletBalanceLabel, ds.secondary]}>
+                ready to withdraw
+              </AppText>
+            </View>
+
+            <View style={styles.walletSplit}>
+              <View style={styles.walletSplitItem}>
+                <AppText variant="caption" style={[styles.walletSplitLabel, ds.secondary]}>
+                  Pending
+                </AppText>
+                <AppText variant="body" style={[styles.walletSplitValue, ds.text]}>
+                  {formatPesewas(wallet.pendingPesewas)}
+                </AppText>
+              </View>
+              <View style={styles.walletSplitItem}>
+                <AppText variant="caption" style={[styles.walletSplitLabel, ds.secondary]}>
+                  Lifetime
+                </AppText>
+                <AppText variant="body" style={[styles.walletSplitValue, ds.text]}>
+                  {formatPesewas(wallet.lifetimePesewas)}
+                </AppText>
+              </View>
+            </View>
+
+            {wallet.momoNumber ? (
+              <View style={styles.walletAccountRow}>
+                <MaterialCommunityIcons name="cellphone" size={14} color={COLORS.textSecondary} />
+                <AppText variant="caption" style={[styles.walletAccount, ds.secondary]}>
+                  Paid to {MOMO_LABELS[wallet.momoProvider || ""] || "Mobile Money"} · {wallet.momoNumber}
+                </AppText>
+              </View>
+            ) : (
+              <Pressable onPress={() => router.push("/profile")}>
+                <AppText variant="caption" style={styles.walletAccountMissing}>
+                  Add your Mobile Money details in Profile settings to get paid.
+                </AppText>
+              </Pressable>
+            )}
+
+            <PrimaryButton
+              title={payoutBusy ? "Requesting..." : "Withdraw earnings"}
+              onPress={() => void handleWithdraw()}
+              disabled={payoutBusy || wallet.withdrawablePesewas <= 0}
+              style={styles.walletButton}
+            />
+          </View>
         </ScrollView>
       </AppBackground>
     </AuthGate>
@@ -511,6 +644,75 @@ export default function DriverDashboardScreen() {
 // ---------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
+  walletCard: {
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: SPACING.lg,
+    marginTop: SPACING.xl,
+  },
+  walletHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: SPACING.sm,
+  },
+  walletHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+  },
+  walletEyebrow: {
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 1,
+  },
+  walletHint: {
+    fontSize: 10,
+  },
+  walletBalanceRow: {
+    marginTop: SPACING.md,
+  },
+  walletBalance: {
+    fontSize: 30,
+    lineHeight: 36,
+  },
+  walletBalanceLabel: {
+    marginTop: 2,
+  },
+  walletSplit: {
+    flexDirection: "row",
+    marginTop: SPACING.md,
+    gap: SPACING.lg,
+  },
+  walletSplitItem: {
+    flex: 1,
+  },
+  walletSplitLabel: {
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 0.6,
+  },
+  walletSplitValue: {
+    marginTop: 2,
+    fontWeight: "600",
+  },
+  walletAccountRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+    marginTop: SPACING.md,
+  },
+  walletAccount: {
+    flex: 1,
+  },
+  walletAccountMissing: {
+    color: COLORS.accent,
+    marginTop: SPACING.md,
+    fontWeight: "600",
+  },
+  walletButton: {
+    marginTop: SPACING.md,
+  },
   content: {
     paddingHorizontal: SPACING.lg,
     paddingTop: SPACING.xl,

@@ -361,7 +361,7 @@ export async function getDriverPickupLocations(
   const bookingsQuery = query(
     collection(db, "bookings"),
     where("driverId", "==", driverId),
-    where("status", "in", ["pending", "confirmed"]),
+    where("status", "in", ["pending", "awaiting_payment", "confirmed"]),
     limit(20)
   );
 
@@ -444,7 +444,7 @@ export function subscribeDriverBookings(
   const bookingsQuery = query(
     collection(db, "bookings"),
     where("driverId", "==", driverId),
-    where("status", "in", ["pending", "confirmed"]),
+    where("status", "in", ["pending", "awaiting_payment", "confirmed"]),
     limit(20)
   );
 
@@ -481,7 +481,7 @@ export async function getDriverActiveBookings(driverId: string) {
   const bookingsQuery = query(
     collection(db, "bookings"),
     where("driverId", "==", driverId),
-    where("status", "in", ["pending", "confirmed"]),
+    where("status", "in", ["pending", "awaiting_payment", "confirmed"]),
     limit(20)
   );
 

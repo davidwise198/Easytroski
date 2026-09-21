@@ -39,6 +39,10 @@ export interface DriverProfileData {
   vehicleColor: string;
   vehicleSeatingCapacity: number;
   preferredRoute?: string;
+  /** Mobile Money network used for payouts (Paystack provider code). */
+  momoProvider?: "mtn" | "vod" | "atl";
+  /** Local-format Mobile Money number, e.g. 0244123456. */
+  momoNumber?: string;
 }
 
 const createUserProfile = async (user: User, profileData: UserProfileData) => {
@@ -90,6 +94,9 @@ const createDriverProfile = async (userId: string, driverData: DriverProfileData
       vehicleColor: driverData.vehicleColor,
       vehicleCapacity: driverData.vehicleSeatingCapacity,
       preferredRoute: driverData.preferredRoute,
+      // Payout details are required: earnings can only be paid to a wallet.
+      ...(driverData.momoProvider ? { momoProvider: driverData.momoProvider } : {}),
+      ...(driverData.momoNumber ? { momoNumber: driverData.momoNumber } : {}),
       online: false,
       status: "offline",
       availableSeats: 0,

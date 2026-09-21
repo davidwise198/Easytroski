@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { ScrollView, StyleSheet, View } from "react-native";
+import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { router } from "expo-router";
 
@@ -13,6 +13,16 @@ import { completeDriverProfile } from "../../src/services/auth";
 import { SPACING, COLORS } from "../../src/theme";
 import { getFriendlyError } from "../../src/utils/firebaseErrors";
 import { showToast } from "../../src/utils/toast";
+import { normaliseGhanaPhone } from "../../src/utils/money";
+import type { MomoProvider } from "../../src/types/models";
+
+// Paystack's Ghana mobile money provider codes, in the order a Ghanaian
+// driver is most likely to use them.
+const MOMO_NETWORKS: Array<{ code: MomoProvider; label: string; icon: string }> = [
+  { code: "mtn", label: "MTN", icon: "cellphone" },
+  { code: "vod", label: "Telecel", icon: "cellphone-arrow-down" },
+  { code: "atl", label: "AirtelTigo", icon: "cellphone-cog" },
+];
 
 export default function DriverOnboardingScreen() {
   const [phoneNumber, setPhoneNumber] = useState("");
@@ -21,6 +31,8 @@ export default function DriverOnboardingScreen() {
   const [vehicleColor, setVehicleColor] = useState("");
   const [vehicleSeatingCapacity, setVehicleSeatingCapacity] = useState("");
   const [preferredRoute, setPreferredRoute] = useState("");
+  const [momoProvider, setMomoProvider] = useState<MomoProvider>("mtn");
+  const [momoNumber, setMomoNumber] = useState("");
   const [loading, setLoading] = useState(false);
 
   const handleComplete = async () => {
@@ -52,6 +64,16 @@ export default function DriverOnboardingScreen() {
       return;
     }
 
+    const payoutNumber = normaliseGhanaPhone(momoNumber);
+    if (!payoutNumber) {
+      showToast(
+        "warning",
+        "Mobile Money number needed",
+        "Enter the Mobile Money number that should receive your earnings, e.g. 0244123456."
+      );
+      return;
+    }
+
     setLoading(true);
     try {
       await completeDriverProfile(user.uid, {
@@ -60,6 +82,8 @@ export default function DriverOnboardingScreen() {
         vehicleColor: vehicleColor.trim(),
         vehicleSeatingCapacity: parseInt(vehicleSeatingCapacity.trim(), 10),
         preferredRoute: preferredRoute.trim(),
+        momoProvider,
+        momoNumber: payoutNumber,
       });
 
       // Update phone if provided
@@ -155,6 +179,54 @@ export default function DriverOnboardingScreen() {
             onChangeText={setPreferredRoute}
           />
 
+          {/* ─── Payout details ─── */}
+          <AppText variant="caption" style={styles.sectionLabel}>
+            PAYOUT DETAILS
+          </AppText>
+
+          <AppText variant="body" style={styles.payoutHint}>
+            Your fares (minus the EasyTroski commission) are paid into this Mobile
+            Money wallet. You can withdraw once a day, from 8:00 PM.
+          </AppText>
+
+          <View style={styles.networkRow}>
+            {MOMO_NETWORKS.map((network) => {
+              const selected = momoProvider === network.code;
+              return (
+                <Pressable
+                  key={network.code}
+                  onPress={() => setMomoProvider(network.code)}
+                  style={[
+                    styles.networkButton,
+                    selected && styles.networkButtonSelected,
+                  ]}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected }}
+                >
+                  <MaterialCommunityIcons
+                    name={network.icon as any}
+                    size={18}
+                    color={selected ? "#FFFFFF" : COLORS.textSecondary}
+                  />
+                  <AppText
+                    variant="caption"
+                    style={[styles.networkLabel, selected && styles.networkLabelSelected]}
+                  >
+                    {network.label}
+                  </AppText>
+                </Pressable>
+              );
+            })}
+          </View>
+
+          <GlassInput
+            placeholder="Mobile Money number (e.g. 0244123456)"
+            icon="wallet"
+            keyboardType="phone-pad"
+            value={momoNumber}
+            onChangeText={setMomoNumber}
+          />
+
           <PrimaryButton
             title={loading ? "Setting up..." : "Complete Setup"}
             onPress={handleComplete}
@@ -163,7 +235,8 @@ export default function DriverOnboardingScreen() {
               !driverLicenseNumber.trim() ||
               !vehicleRegistrationNumber.trim() ||
               !vehicleColor.trim() ||
-              !vehicleSeatingCapacity.trim()
+              !vehicleSeatingCapacity.trim() ||
+              !momoNumber.trim()
             }
             variant="primary"
           />
@@ -205,5 +278,43 @@ const styles = StyleSheet.create({
     opacity: 0.7,
     marginTop: SPACING.lg,
     marginBottom: SPACING.md,
+  },
+
+  payoutHint: {
+    textAlign: "center",
+    opacity: 0.75,
+    marginBottom: SPACING.md,
+    paddingHorizontal: SPACING.sm,
+  },
+
+  networkRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: SPACING.sm,
+    marginBottom: SPACING.md,
+  },
+
+  networkButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: SPACING.sm,
+    paddingHorizontal: SPACING.md,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(148, 163, 184, 0.35)",
+  },
+
+  networkButtonSelected: {
+    backgroundColor: COLORS.primary,
+    borderColor: COLORS.primary,
+  },
+
+  networkLabel: {
+    fontWeight: "600",
+  },
+
+  networkLabelSelected: {
+    color: "#FFFFFF",
   },
 });
