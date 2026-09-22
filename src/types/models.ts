@@ -1,5 +1,5 @@
 // User roles in the system
-export type UserRole = "passenger" | "driver" | "admin";
+export type UserRole = "passenger" | "driver" | "mate" | "admin";
 
 
 // ---------------------------------------------------------------------------
@@ -151,6 +151,13 @@ export interface Driver {
   /** Route locked as this driver's default (changeable only in Profile settings). */
   defaultRouteId?: string;
 
+  /**
+   * Permanent public Driver ID, e.g. ET-DV-48291. Written by the backend the
+   * first time a driver needs one and shared with a mate so they can ask to
+   * join. It identifies — it never authorises anything on its own.
+   */
+  driverCode?: string;
+
   // ─── Payout details (required at driver onboarding) ──────────────────────
   momoProvider?: MomoProvider;
   momoNumber?: string;
@@ -179,6 +186,58 @@ export interface Driver {
 export interface Passenger {
   id: string;
   userId: string;
+}
+
+// ─── Mate ─────────────────────────────────────────────────────────────────
+//
+// Two separate relationships, deliberately not merged:
+//   MateConnection  — this mate may work with this driver (can last months)
+//   Trip.mateId     — this mate is working that one trip (ends with it)
+
+export type MateStatus = "active" | "suspended";
+
+export interface Mate {
+  id: string;
+  userId: string;
+  name: string;
+  phone?: string;
+  /** Permanent public Mate ID, e.g. ET-MT-18432. Backend-assigned. */
+  mateCode?: string;
+  status: MateStatus;
+  createdAt?: Date | string;
+  updatedAt?: string;
+}
+
+export type MateConnectionStatus = "active" | "left" | "removed";
+
+export interface MateConnection {
+  id: string;
+  driverId: string;
+  mateId: string;
+  driverName?: string;
+  driverCode?: string;
+  mateName?: string;
+  mateCode?: string;
+  status: MateConnectionStatus;
+  createdAt?: string;
+  endedAt?: string | null;
+  endedBy?: string | null;
+}
+
+export type MateJoinRequestStatus = "pending" | "accepted" | "rejected" | "cancelled";
+
+export interface MateJoinRequest {
+  id: string;
+  driverId: string;
+  driverCode?: string | null;
+  driverName?: string | null;
+  mateId: string;
+  mateName?: string | null;
+  mateCode?: string | null;
+  status: MateJoinRequestStatus;
+  createdAt?: string;
+  decidedAt?: string;
+  decidedBy?: string;
 }
 
 
@@ -252,6 +311,11 @@ export interface Booking {
   updatedAt?: string;
   cancelledAt?: Date | string;
   cancelledBy?: string;
+
+  // ─── Attribution (who last acted: the driver or the trip's mate) ───────
+  lastActionBy?: string;
+  lastActionByRole?: UserRole;
+  lastActionAt?: string;
 }
 
 
@@ -364,7 +428,15 @@ export type NotificationType =
   | "refund_pending"
   | "refund_completed"
   | "payout_paid"
-  | "trip_ended";
+  | "trip_ended"
+  // Mate connection + assignment
+  | "mate_request"
+  | "mate_accepted"
+  | "mate_rejected"
+  | "mate_assigned"
+  | "mate_unassigned"
+  | "mate_removed"
+  | "mate_left";
 
 export interface AppNotification {
   id: string;
@@ -390,6 +462,16 @@ export interface Trip {
   status: TripStatus;
 
   direction: TripDirection;
+
+  // ─── Mate working this trip (assignment — not the connection) ──────────
+  /** The mate on this trip. Kept once set, so history outlives the assignment. */
+  mateId?: string;
+  mateName?: string;
+  mateCode?: string;
+  /** True only while the mate is actually working the trip. */
+  mateActive?: boolean;
+  mateAssignedAt?: string;
+  mateUnassignedAt?: string | null;
 
   startTime?: Date;
   endTime?: Date;

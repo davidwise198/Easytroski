@@ -23,6 +23,7 @@ import { DRIVER_STALE_MINUTES } from "./env.ts";
 import { expireStaleHolds, getActiveTripForDriver } from "./bookings.ts";
 import { cancelBookingForSystem } from "./cancelFlow.ts";
 import { makeEarningAvailable } from "./wallet.ts";
+import { clearMateOnTripEnd, ensureDriverCode } from "./mates.ts";
 
 const LIVE_BOOKING_STATUSES = ["pending", "awaiting_payment", "confirmed", "picked_up"];
 
@@ -68,6 +69,10 @@ export async function startTripCore(input: {
   if (existing) {
     throw new ApiError("booking_wrong_state", "You already have a trip running.", 409);
   }
+
+  // A driver must have a Driver ID before a mate can ask to join them. Getting
+  // one can never be the reason a trip fails, so a failure here is ignored.
+  await ensureDriverCode(input.driverId).catch(() => {});
 
   const tripId = newId();
   const capacity = Math.max(1, Math.round(input.capacity || Number(driver.data.vehicleCapacity || 12)));
@@ -149,6 +154,11 @@ export async function endTripCore(
         trip.updateTime
       ),
     ]);
+  }
+
+  // The mate stops working now; the trip keeps their id as its record.
+  if (trip && trip.data.mateId && trip.data.mateActive !== false) {
+    await clearMateOnTripEnd(trip);
   }
 
   // Offline with no seats on offer.
@@ -319,6 +329,10 @@ async function offlineDriver(driverId: string): Promise<number> {
         trip.updateTime
       ),
     ]);
+
+    if (trip.data.mateId && trip.data.mateActive !== false) {
+      await clearMateOnTripEnd(trip);
+    }
   }
 
   const bookings = await queryDocuments({

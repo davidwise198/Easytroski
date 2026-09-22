@@ -41,7 +41,16 @@ export type PaymentsAction =
   | "requestPayout"
   | "runMaintenance"
   | "adminResolveRefund"
-  | "adminResolvePayout";
+  | "adminResolvePayout"
+  // Mate identity, connection and trip assignment
+  | "ensureIds"
+  | "mateDriverPreview"
+  | "mateJoinRequest"
+  | "mateJoinDecide"
+  | "mateLeaveDriver"
+  | "driverRemoveMate"
+  | "assignMate"
+  | "unassignMate";
 
 /**
  * Errors the backend raises deliberately. Each maps to plain language a
@@ -76,6 +85,20 @@ export type PaymentsErrorCode =
   | "momo_number_invalid"
   | "not_authorised"
   | "rate_limited"
+  | "invalid_driver_code"
+  | "driver_not_found"
+  | "already_connected"
+  | "not_connected"
+  | "request_pending"
+  | "request_not_found"
+  | "request_not_pending"
+  | "not_your_mate"
+  | "too_many_requests"
+  | "mate_profile_missing"
+  | "mate_busy"
+  | "mate_assigned_to_trip"
+  | "trip_not_running"
+  | "trip_has_passengers"
   | "unknown";
 
 const FRIENDLY_MESSAGES: Record<PaymentsErrorCode, string> = {
@@ -108,6 +131,20 @@ const FRIENDLY_MESSAGES: Record<PaymentsErrorCode, string> = {
   momo_number_invalid: "That Mobile Money number doesn't look right.",
   not_authorised: "You don't have permission to do that.",
   rate_limited: "Too many attempts. Please wait a moment and try again.",
+  invalid_driver_code: "That doesn't look like a Driver ID. It should look like ET-DV-48291.",
+  driver_not_found: "We couldn't find a driver with that ID. Please check it and try again.",
+  already_connected: "You're already connected to this driver.",
+  not_connected: "You're not connected to that driver.",
+  request_pending: "You've already asked this driver. Please wait for their answer.",
+  request_not_found: "We couldn't find that request.",
+  request_not_pending: "That request has already been answered.",
+  not_your_mate: "That request isn't yours to answer.",
+  too_many_requests: "Too many requests for now. Please wait before trying again.",
+  mate_profile_missing: "Your mate profile is missing. Please sign in again.",
+  mate_busy: "That mate is already working on another trip.",
+  mate_assigned_to_trip: "This mate is still on a trip. Finish the trip first.",
+  trip_not_running: "Start the trip before doing that.",
+  trip_has_passengers: "There are still passengers on this trip. Finish them first.",
   unknown: "We couldn't complete that. Please try again.",
 };
 

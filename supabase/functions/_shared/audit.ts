@@ -30,14 +30,29 @@ export type AuditEvent =
   | "PAYOUT_FAILED"
   | "BOOKING_COMPLETED"
   | "DRIVER_AUTO_OFFLINE"
+  // Booking decisions name who acted through `actorRole`: the driver who owns
+  // the trip, or the mate working it. DRIVER_ACCEPTED / DRIVER_REJECTED are
+  // the historical names and are no longer written.
+  | "BOOKING_ACCEPTED"
+  | "BOOKING_REJECTED"
+  | "BOOKING_PICKED_UP"
+  // Mate connection + trip assignment
+  | "MATE_JOIN_REQUESTED"
+  | "MATE_JOIN_ACCEPTED"
+  | "MATE_JOIN_REJECTED"
+  | "MATE_ASSIGNED"
+  | "MATE_UNASSIGNED"
+  | "MATE_REMOVED"
+  | "MATE_LEFT"
+  | "MATE_SEATS_CHANGED"
   | "ADMIN_ACTION";
 
 export type AuditInput = {
   event: AuditEvent;
-  entityType: "booking" | "payment" | "payout" | "driver" | "refund";
+  entityType: "booking" | "payment" | "payout" | "driver" | "refund" | "mate" | "trip";
   entityId: string;
   actorId?: string;
-  actorRole?: "passenger" | "driver" | "admin" | "system" | "paystack";
+  actorRole?: "passenger" | "driver" | "mate" | "admin" | "system" | "paystack";
   amountPesewas?: number;
   providerRef?: string;
   /** Never put secrets, card numbers or raw provider payloads here. */

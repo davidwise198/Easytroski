@@ -284,6 +284,53 @@ service cloud.firestore {
       allow create, delete: if isAdmin();
     }
 
+    // ─── Mate identities ───────────────────────────────────────────────
+    //
+    // A mate profile belongs to the mate: their name, contact and Mate ID.
+    // Created and updated by the backend only, so a Mate ID can never be
+    // invented or replaced from a phone. The driver they work with does not
+    // need to read this document — names and codes they must see are
+    // embedded on the connection and trip documents instead.
+
+    match /mates/{mateId} {
+      allow read: if isOwner(mateId) || isAdmin();
+      allow create, update, delete: if false;
+    }
+
+    // ─── Driver ↔ mate connections ─────────────────────────────────────
+    //
+    // "This mate is allowed to work with this driver." Readable by the two
+    // people involved so the app can list them; written only by the backend,
+    // because accepting a mate is a driver decision the server must verify.
+
+    match /mateConnections/{connectionId} {
+      allow read: if signedIn()
+        && (resource.data.mateId == request.auth.uid
+          || resource.data.driverId == request.auth.uid
+          || isAdmin());
+      allow write: if false;
+    }
+
+    // ─── Mate join requests ────────────────────────────────────────────
+
+    match /mateJoinRequests/{requestId} {
+      allow read: if signedIn()
+        && (resource.data.mateId == request.auth.uid
+          || resource.data.driverId == request.auth.uid
+          || isAdmin());
+      allow write: if false;
+    }
+
+    // ─── Public ID ledger ──────────────────────────────────────────────
+    //
+    // Maps a Driver/Mate ID to its profile. Backend-only: the app never
+    // resolves a code itself, it asks the backend (which also enforces the
+    // rate limits), so this mapping never needs to leave the server.
+
+    match /idCodes/{code} {
+      allow read, write: if false;
+    }
+
     // ─── Everything else is closed ─────────────────────────────────────
 
     match /{document=**} {

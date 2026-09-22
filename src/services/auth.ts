@@ -11,8 +11,11 @@ import {
 import { doc, getDoc, setDoc, serverTimestamp } from "firebase/firestore";
 
 import { auth, db } from "./firebase";
+import type { UserRole } from "../types/models";
 
-export type UserRole = "passenger" | "driver" | "admin";
+// The role union has a single definition in src/types/models.ts; re-exported
+// here so existing imports from this module keep working.
+export type { UserRole };
 
 export interface UserProfileData {
   fullName: string;
@@ -118,7 +121,7 @@ export const getUserRole = async (user: User): Promise<UserRole | null> => {
   if (profileDoc.exists()) {
     const role = profileDoc.data().role;
 
-    if (role === "driver" || role === "passenger" || role === "admin") {
+    if (role === "driver" || role === "passenger" || role === "mate" || role === "admin") {
       return role as UserRole;
     }
   }

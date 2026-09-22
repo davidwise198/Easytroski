@@ -26,6 +26,7 @@ import { ApiError } from "./errors.ts";
 import { notify, writeAudit } from "./audit.ts";
 import { HOLDING_STATUSES, MAX_OPEN_UNPAID_BOOKINGS } from "./state.ts";
 import { makeEarningAvailable } from "./wallet.ts";
+import { actorMeta, resolveBookingActor } from "./mates.ts";
 
 export const MAX_SEATS_PER_BOOKING = 3;
 
@@ -229,17 +230,21 @@ export async function releaseSeatsOnce(bookingId: string): Promise<boolean> {
 
 export type DecisionResult = { status: string; paymentDeadlineAt?: string };
 
-/** Driver accepts or rejects a request. Only the assigned driver may decide. */
+/**
+ * Accept or reject a request.
+ *
+ * Authority — resolved against live data, never taken from the caller:
+ *   · the booking's own driver, so a trip with no mate still works
+ *   · the mate assigned to that driver's running trip
+ */
 export async function driverDecide(
   bookingId: string,
-  driverId: string,
+  actorUid: string,
   decision: "accept" | "reject"
 ): Promise<DecisionResult> {
   const booking = await getBookingOrThrow(bookingId);
+  const actor = await resolveBookingActor(booking, actorUid);
 
-  if (booking.data.driverId !== driverId) {
-    throw new ApiError("not_your_trip", "That booking isn't yours.", 403);
-  }
   if (booking.data.status !== "pending") {
     throw new ApiError("booking_wrong_state", "This request has already been handled.", 409);
   }
@@ -287,10 +292,22 @@ export async function driverDecide(
             status: "cancelled",
             cancelReason: "rejected_by_driver",
             cancelledAt: nowIso(),
-            cancelledBy: driverId,
+            cancelledBy: actor.actorId,
+            lastActionBy: actor.actorId,
+            lastActionByRole: actor.actorRole,
+            lastActionAt: nowIso(),
             updatedAt: nowIso(),
           },
-          ["status", "cancelReason", "cancelledAt", "cancelledBy", "updatedAt"],
+          [
+            "status",
+            "cancelReason",
+            "cancelledAt",
+            "cancelledBy",
+            "lastActionBy",
+            "lastActionByRole",
+            "lastActionAt",
+            "updatedAt",
+          ],
           fresh.updateTime
         ),
       ]);
@@ -298,11 +315,12 @@ export async function driverDecide(
     await releaseSeatsOnce(bookingId);
 
     await writeAudit({
-      event: "DRIVER_REJECTED",
+      event: "BOOKING_REJECTED",
       entityType: "booking",
       entityId: bookingId,
-      actorId: driverId,
-      actorRole: "driver",
+      actorId: actor.actorId,
+      actorRole: actor.actorRole,
+      meta: actorMeta(actor),
     });
     await notify({
       recipientId: booking.data.passengerId as string,
@@ -329,21 +347,33 @@ export async function driverDecide(
           status: "awaiting_payment",
           paymentDeadlineAt,
           seatHoldExpiresAt: paymentDeadlineAt,
+          lastActionBy: actor.actorId,
+          lastActionByRole: actor.actorRole,
+          lastActionAt: nowIso(),
           updatedAt: nowIso(),
         },
-        ["status", "paymentDeadlineAt", "seatHoldExpiresAt", "updatedAt"],
+        [
+          "status",
+          "paymentDeadlineAt",
+          "seatHoldExpiresAt",
+          "lastActionBy",
+          "lastActionByRole",
+          "lastActionAt",
+          "updatedAt",
+        ],
         fresh.updateTime
       ),
     ]);
   });
 
   await writeAudit({
-    event: "DRIVER_ACCEPTED",
+    event: "BOOKING_ACCEPTED",
     entityType: "booking",
     entityId: bookingId,
-    actorId: driverId,
-    actorRole: "driver",
+    actorId: actor.actorId,
+    actorRole: actor.actorRole,
     amountPesewas: Number(booking.data.totalPesewas || 0),
+    meta: actorMeta(actor),
   });
   await notify({
     recipientId: booking.data.passengerId as string,
@@ -356,10 +386,10 @@ export async function driverDecide(
   return { status: "awaiting_payment", paymentDeadlineAt };
 }
 
-/** Driver marks the passenger as picked up (refund eligibility ends here). */
-export async function markPickedUp(bookingId: string, driverId: string): Promise<void> {
+/** The driver or the trip's mate marks the passenger as picked up. */
+export async function markPickedUp(bookingId: string, actorUid: string): Promise<void> {
   const booking = await getBookingOrThrow(bookingId);
-  if (booking.data.driverId !== driverId) throw new ApiError("not_your_trip", "That booking isn't yours.", 403);
+  const actor = await resolveBookingActor(booking, actorUid);
   if (booking.data.status !== "confirmed") {
     throw new ApiError("booking_wrong_state", "Only a paid booking can be marked as picked up.", 409);
   }
@@ -370,18 +400,34 @@ export async function markPickedUp(bookingId: string, driverId: string): Promise
     await commit([
       updateWrite(
         `bookings/${bookingId}`,
-        { status: "picked_up", pickedUpAt: nowIso(), updatedAt: nowIso() },
-        ["status", "pickedUpAt", "updatedAt"],
+        {
+          status: "picked_up",
+          pickedUpAt: nowIso(),
+          lastActionBy: actor.actorId,
+          lastActionByRole: actor.actorRole,
+          lastActionAt: nowIso(),
+          updatedAt: nowIso(),
+        },
+        ["status", "pickedUpAt", "lastActionBy", "lastActionByRole", "lastActionAt", "updatedAt"],
         fresh.updateTime
       ),
     ]);
   });
+
+  await writeAudit({
+    event: "BOOKING_PICKED_UP",
+    entityType: "booking",
+    entityId: bookingId,
+    actorId: actor.actorId,
+    actorRole: actor.actorRole,
+    meta: actorMeta(actor),
+  });
 }
 
-/** Driver ends the ride: the driver's earnings become withdrawable. */
-export async function completeBooking(bookingId: string, driverId: string): Promise<void> {
+/** Driver or trip mate ends the ride: the driver's earnings become withdrawable. */
+export async function completeBooking(bookingId: string, actorUid: string): Promise<void> {
   const booking = await getBookingOrThrow(bookingId);
-  if (booking.data.driverId !== driverId) throw new ApiError("not_your_trip", "That booking isn't yours.", 403);
+  const actor = await resolveBookingActor(booking, actorUid);
   if (booking.data.status !== "picked_up" && booking.data.status !== "confirmed") {
     throw new ApiError("booking_wrong_state", "This booking can't be completed.", 409);
   }
@@ -392,8 +438,15 @@ export async function completeBooking(bookingId: string, driverId: string): Prom
     await commit([
       updateWrite(
         `bookings/${bookingId}`,
-        { status: "completed", completedAt: nowIso(), updatedAt: nowIso() },
-        ["status", "completedAt", "updatedAt"],
+        {
+          status: "completed",
+          completedAt: nowIso(),
+          lastActionBy: actor.actorId,
+          lastActionByRole: actor.actorRole,
+          lastActionAt: nowIso(),
+          updatedAt: nowIso(),
+        },
+        ["status", "completedAt", "lastActionBy", "lastActionByRole", "lastActionAt", "updatedAt"],
         fresh.updateTime
       ),
     ]);
@@ -403,9 +456,10 @@ export async function completeBooking(bookingId: string, driverId: string): Prom
     event: "BOOKING_COMPLETED",
     entityType: "booking",
     entityId: bookingId,
-    actorId: driverId,
-    actorRole: "driver",
+    actorId: actor.actorId,
+    actorRole: actor.actorRole,
     amountPesewas: Number(booking.data.totalPesewas || 0),
+    meta: actorMeta(actor),
   });
 
   const fresh = await getBooking(bookingId);

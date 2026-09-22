@@ -63,7 +63,7 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
             if (snapshot.exists()) {
               const data = snapshot.data();
               const role = data.role;
-              if (role === "driver" || role === "passenger" || role === "admin") {
+              if (role === "driver" || role === "passenger" || role === "mate" || role === "admin") {
                 setUserRole(role as UserRole);
                 // Sync driver profile data (name, email, phone) to drivers collection
                 if (role === "driver") {

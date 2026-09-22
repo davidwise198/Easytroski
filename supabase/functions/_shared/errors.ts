@@ -34,6 +34,21 @@ export type ApiErrorCode =
   | "invalid_request"
   | "rate_limited"
   | "conflict"
+  // ─── Mate identity, connection and assignment ──────────────────────────
+  | "invalid_driver_code"
+  | "driver_not_found"
+  | "already_connected"
+  | "not_connected"
+  | "request_pending"
+  | "request_not_found"
+  | "request_not_pending"
+  | "not_your_mate"
+  | "too_many_requests"
+  | "mate_profile_missing"
+  | "mate_busy"
+  | "mate_assigned_to_trip"
+  | "trip_not_running"
+  | "trip_has_passengers"
   | "unknown";
 
 export class ApiError extends Error {

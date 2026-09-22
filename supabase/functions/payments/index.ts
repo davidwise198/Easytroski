@@ -16,6 +16,16 @@ import { cancelBookingCore } from "../_shared/cancelFlow.ts";
 import { endTripCore, runMaintenance, setDriverCapacityCore, setDriverOnlineCore, startTripCore } from "../_shared/tripFlow.ts";
 import { driverResumedCore } from "../_shared/resumeFlow.ts";
 import { requestPayoutCore, resolvePayoutCore } from "../_shared/payoutFlow.ts";
+import {
+  assignMate,
+  decideJoin,
+  driverPreview,
+  ensureIds,
+  leaveDriver,
+  removeMate,
+  requestJoin,
+  unassignMate,
+} from "../_shared/mates.ts";
 import { writeAudit } from "../_shared/audit.ts";
 
 /** Let background housekeeping finish even after the response is sent. */
@@ -220,6 +230,57 @@ Deno.serve(async (request: Request): Promise<Response> => {
       case "requestPayout": {
         const result = await requestPayoutCore(user.uid);
         return json(result);
+      }
+
+      // ─── Mate identity ──────────────────────────────────────────────────
+      case "ensureIds": {
+        const profile = await userProfile(user.uid);
+        return json(await ensureIds(user.uid, profile?.role));
+      }
+
+      // ─── Mate connection: request, preview, decide ──────────────────────
+      case "mateDriverPreview": {
+        return json(await driverPreview(user.uid, requireString(body.driverCode, "driverCode")));
+      }
+
+      case "mateJoinRequest": {
+        const result = await requestJoin(user.uid, requireString(body.driverCode, "driverCode"));
+        return json(result);
+      }
+
+      case "mateJoinDecide": {
+        const decision = requireString(body.decision, "decision");
+        if (decision !== "accept" && decision !== "reject") {
+          throw new ApiError("invalid_request", "decision must be accept or reject", 400);
+        }
+        const result = await decideJoin(
+          requireString(body.requestId, "requestId"),
+          user.uid,
+          decision
+        );
+        return json(result);
+      }
+
+      case "mateLeaveDriver": {
+        return json(await leaveDriver(user.uid, requireString(body.driverId, "driverId")));
+      }
+
+      case "driverRemoveMate": {
+        return json(await removeMate(user.uid, requireString(body.mateId, "mateId")));
+      }
+
+      // ─── Trip assignment ────────────────────────────────────────────────
+      case "assignMate": {
+        const result = await assignMate(
+          user.uid,
+          requireString(body.tripId, "tripId"),
+          requireString(body.mateId, "mateId")
+        );
+        return json(result);
+      }
+
+      case "unassignMate": {
+        return json(await unassignMate(user.uid, requireString(body.tripId, "tripId")));
       }
 
       // ─── Maintenance (any signed-in user may nudge it) ───────────────────
