@@ -123,8 +123,12 @@ Guards that deliberately say no:
 - **Phase 1 — mate app (done):** `(mate-tabs)` Home / Passengers / My Driver,
   the Join a Driver flow, role plumbing across every auth screen, the driver's
   My Mates card (Driver ID + Copy/Share, requests, assign/remove).
-- **Phase 2 — driver app:** attribution shown on the driver's bookings list,
-  mate-aware booking cards, any remaining driver-side polish.
+- **Phase 2 — the Mate as real-time operator (done):** the unmissable in-app
+  request alert mounted across the mate tabs, notifications addressed to the
+  Mate, plain-worded refusals when an assignment ends mid-action, and the driver
+  seeing who is handling the trip.
+- **Phase 3 — driver app polish:** attribution shown on the driver's bookings
+  history list and any remaining driver-side wording.
 - **Phase 3 — security review:** confirm the shipped rules match intent on a
   device and add anything the mate flows turn out to need.
 - **Phase 4 — seats:** dropping a passenger off returns their seats to the trip
@@ -140,6 +144,30 @@ rule `resource.data.mateId == request.auth.uid` then grants that one mate read
 access. This is **visibility only** — authority is re-resolved server-side by
 `resolveBookingActor()` on every accept, reject, pickup and completion, and by
 the action endpoints for joins, assignment and leaving.
+
+## How a request reaches the Mate (Phase 2)
+
+Three things, in this order of importance:
+
+1. **The live listener.** The Mate's screens read `bookings` where
+   `mateId == their uid` (stamped by the backend, see above) and `trips` where
+   `mateId == their uid`. A request appears with no refresh, and disappears the
+   moment the assignment or the trip ends.
+2. **The alert.** `src/components/mate/MateRequestAlert.tsx` is mounted by
+   `app/(mate-tabs)/_layout.tsx`, so it reaches the Mate on any mate tab. It
+   watches the same two streams, treats the *first* payload as already-seen (so
+   opening the app never fires a backlog), and then takes over the screen with a
+   repeating vibration for a genuinely new request. It steps away on its own, and
+   immediately if the assignment ends or somebody else answers first. It decides
+   nothing: Accept and Reject call the same backend actions as the Passengers
+   screen, so the server stays the authority.
+3. **Notification documents.** `booking_request` is addressed to the Mate when one
+   is assigned (to the driver only when nobody is, which is the prompt to assign
+   one), and a confirmed payment tells the Mate the seat is paid. These are
+   records for a future inbox — the rules already let a recipient read their own
+   and mark it read — but nothing displays them yet, and no push token is
+   registered (there is no native notification module), so **the alert is the
+   delivery mechanism today.**
 
 ## Not yet built (so nobody assumes it works)
 

@@ -834,6 +834,15 @@ export default function DriverMapScreen() {
                 </AppText>
               </View>
 
+              {/* Who is answering passenger requests on this trip */}
+              <View style={styles.tripMateRow}>
+                <MaterialCommunityIcons name="account-tie" size={15} color={COLORS.accent} />
+                <AppText variant="caption" style={styles.tripMateText} numberOfLines={2}>
+                  {mateOnTrip
+                    ? `${activeTrip.mateName || "Your Mate"} is handling passenger requests.`
+                    : "Assign a Mate to take booking requests."}
+                </AppText>
+              </View>
               {/* Seat counter */}
               <View style={[styles.seatCounterRow, ds.seatCounterRow]}>
                 <AppText variant="caption" style={[styles.sectionLabel, ds.sectionLabel]}>AVAILABLE SEATS</AppText>
@@ -1132,6 +1141,21 @@ export default function DriverMapScreen() {
 }
 
 const styles = StyleSheet.create({
+  tripMateRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: "rgba(245,158,11,0.10)",
+  },
+  tripMateText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 17,
+  },
   // ─── Mate-only booking decisions ───
   mateNeededRow: {
     flexDirection: "row",

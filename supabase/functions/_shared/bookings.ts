@@ -198,10 +198,13 @@ export async function createBookingRequest(input: CreateBookingInput): Promise<{
     meta: { driverId: input.driverId, routeId: input.routeId, seats },
   });
 
+  // The Mate is the only person who can answer a request, so it is addressed to
+  // them while they are on the trip. A driver with no Mate assigned still gets
+  // it: it is the prompt to assign one before requests expire.
   await notify({
-    recipientId: input.driverId,
+    recipientId: mateId ?? input.driverId,
     type: "booking_request",
-    title: "New booking request",
+    title: mateId ? "New booking request" : "New booking request — no Mate assigned",
     body: `${input.passengerName || "A passenger"} wants ${seats} seat${seats > 1 ? "s" : ""}.`,
     bookingId,
   });

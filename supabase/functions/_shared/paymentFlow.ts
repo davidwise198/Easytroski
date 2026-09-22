@@ -466,6 +466,20 @@ export async function confirmChargeCore(input: {
     bookingId: booking.id,
   });
 
+  // The Mate is the one who boards and drops this passenger off, so a paid seat
+  // is their cue — never a licence: payment state is read from the booking, and
+  // only the backend ever writes it.
+  const paidMateId = typeof booking.data.mateId === "string" ? booking.data.mateId : null;
+  if (paidMateId) {
+    await notify({
+      recipientId: paidMateId,
+      type: "payment_confirmed",
+      title: "Paid — ready to board",
+      body: `${booking.data.passengerName || "Your passenger"} paid for ${booking.data.seats || 1} seat(s).`,
+      bookingId: booking.id,
+    });
+  }
+
   return shape({
     status: "confirmed",
     paymentStatus: "paid",

@@ -10,11 +10,11 @@ import StatCard from "../../src/components/ui/StatCard";
 import { useAuth } from "../../src/contexts/AuthContext";
 import { useThemeColors } from "../../src/contexts/ThemeContext";
 import {
+  mateActionError,
   subscribeDriver,
   subscribeMateActiveTrip,
   subscribeMateBookings,
 } from "../../src/services/mates";
-import { friendlyPaymentError } from "../../src/services/payments";
 import {
   confirmBooking,
   rejectBooking,
@@ -163,7 +163,9 @@ export default function MatePassengersScreen() {
           showToast("success", "Passenger dropped off", "Their seat is recorded.");
         }
       } catch (err) {
-        showToast("error", "Couldn't do that", friendlyPaymentError(err));
+        // The backend refused: either the assignment ended under us or somebody
+        // else already answered. Say which, in plain words.
+        showToast("error", "Couldn't do that", mateActionError(err));
       } finally {
         setBusyId(null);
       }

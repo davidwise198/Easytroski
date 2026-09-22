@@ -28,7 +28,7 @@ import {
 } from "firebase/firestore";
 
 import { db } from "./firebase";
-import { callPaymentsApi } from "./payments";
+import { PaymentsApiError, callPaymentsApi, friendlyPaymentError } from "./payments";
 import type {
   Booking,
   Driver,
@@ -49,6 +49,32 @@ export type EnsuredIds = { role: string; driverCode?: string | null; mateCode?: 
  */
 export function ensureMyIds() {
   return callPaymentsApi<EnsuredIds>("ensureIds", {});
+}
+
+/**
+ * Plain words for a booking action the backend refused.
+ *
+ * The two a mate actually meets are their assignment ending underneath them
+ * (the driver removed them, or the trip finished) and a request somebody else
+ * already answered. The backend stays the authority — this only explains what
+ * it said, and never softens a refusal into a success.
+ */
+export function mateActionError(error: unknown): string {
+  if (error instanceof PaymentsApiError) {
+    switch (error.code) {
+      case "not_your_trip":
+        return "You are no longer on this trip. Ask the driver to assign you again.";
+      case "mate_required":
+        return "Only the Mate assigned to this trip can answer passenger requests.";
+      case "booking_wrong_state":
+        return "This request has already been handled.";
+      case "hold_expired":
+        return "This request expired, so the seats were released.";
+      default:
+        return friendlyPaymentError(error);
+    }
+  }
+  return friendlyPaymentError(error);
 }
 
 export type DriverPreview = {
