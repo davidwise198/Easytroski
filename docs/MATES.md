@@ -127,13 +127,16 @@ Guards that deliberately say no:
   request alert mounted across the mate tabs, notifications addressed to the
   Mate, plain-worded refusals when an assignment ends mid-action, and the driver
   seeing who is handling the trip.
-- **Phase 3 — driver app polish:** attribution shown on the driver's bookings
-  history list and any remaining driver-side wording.
-- **Phase 3 — security review:** confirm the shipped rules match intent on a
-  device and add anything the mate flows turn out to need.
+- **Phase 3 — Driver + Mate + trip coordination (done):** assignment fields on a
+  trip locked to the backend, the driver's trip card completed (vehicle, Mate
+  identity, passenger progress), the Mate's trip card completed (live trip
+  status, booking progress), and the whole coordination matrix executed against
+  a stubbed Firestore.
 - **Phase 4 — seats:** dropping a passenger off returns their seats to the trip
   (reusing the existing release-once guard), mate seat adjustment within
-  vehicle capacity, mate notifications.
+  vehicle capacity, mate notifications. Also still open: attribution wording in
+  the driver's booking history list, and a security review on a real device to
+  confirm the shipped rules match intent.
 
 ## Booking read visibility (shipped in Phase 1)
 
@@ -168,6 +171,37 @@ Three things, in this order of importance:
    and mark it read — but nothing displays them yet, and no push token is
    registered (there is no native notification module), so **the alert is the
    delivery mechanism today.**
+
+## Trip coordination (Phase 3)
+
+**A trip never starts with a Mate on it.** `startTripCore` writes driver, route,
+status and start time — nothing else — and the security rules now reject a
+client-created trip that carries `mateId`, `mateActive` or `mateAssignedAt`. A
+Mate is named only by `assignMate`, after the connection, the running trip and
+the "already on another trip" checks.
+
+**The assignment fields are backend-only.** `resolveBookingActor()` decides who
+may answer a booking by trusting `mateId` + `mateActive` on the trip, so the
+rules treat them like money: on update, a driver may edit their own trip but
+`mateId`, `mateName`, `mateCode`, `mateActive`, `mateAssignedAt`,
+`mateUnassignedAt`, `status`, `startTime`, `endTime` and `endReason` must be
+untouched (`backendOnlyTripFieldsUnchanged()`). Before this, a driver could have
+written those fields from a phone: naming a Mate who was never approved,
+skipping the busy check, or reviving a finished trip. Admins keep full access.
+
+**What each side sees.** The driver's trip card shows the route, the vehicle
+(plate · colour, read from their own driver document), the trip status, who is
+handling passenger requests with the Mate ID beneath it — or *"No Mate assigned
+— passenger booking requests cannot be handled."* — plus an at-a-glance booking
+progress line. The Mate's card shows the same trip from their side: route,
+driver, vehicle, the trip's live status in words, and their own booking
+progress. Both are read-only monitoring; no driver button touches a booking.
+
+**Coming off a trip.** Unassigning, leaving, or being removed while anyone is
+still travelling is refused (`trip_has_passengers` / `mate_assigned_to_trip`).
+Ending the trip clears the assignment, cancels the ride, refunds whoever paid,
+and takes the driver offline — while leaving `mateId` on the trip as the record
+of who worked it.
 
 ## Not yet built (so nobody assumes it works)
 

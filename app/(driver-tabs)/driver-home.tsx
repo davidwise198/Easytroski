@@ -795,6 +795,12 @@ export default function DriverDashboardScreen() {
                 : "Creating your Driver ID..."}
             </AppText>
 
+            {activeTrip && !assignedMateId ? (
+              <AppText variant="caption" style={[styles.mateHelp, ds.secondary]}>
+                No Mate assigned — passenger booking requests cannot be handled.
+              </AppText>
+            ) : null}
+
             {pendingMateRequests.length > 0 ? (
               <View style={styles.mateList}>
                 <AppText variant="caption" style={[styles.mateSectionLabel, ds.secondary]}>

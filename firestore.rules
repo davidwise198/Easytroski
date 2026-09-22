@@ -40,6 +40,30 @@ service cloud.firestore {
       return request.resource.data.diff(resource.data).affectedKeys().hasOnly(allowed);
     }
 
+    /**
+     * A trip's mate assignment and lifecycle belong to the backend alone.
+     *
+     * `resolveBookingActor()` decides who may answer a passenger booking by
+     * trusting `mateId` + `mateActive` on the trip. A client that could write
+     * those fields could therefore hand booking authority to any account, skip
+     * the approval and busy checks in `assignMate`, or revive a finished trip —
+     * so they are locked to the same rules as money and seats.
+     */
+    function backendOnlyTripFieldsUnchanged() {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+        "mateId",
+        "mateName",
+        "mateCode",
+        "mateActive",
+        "mateAssignedAt",
+        "mateUnassignedAt",
+        "status",
+        "startTime",
+        "endTime",
+        "endReason",
+      ]);
+    }
+
     // ─── Users ─────────────────────────────────────────────────────────
 
     match /users/{userId} {
@@ -170,20 +194,25 @@ service cloud.firestore {
     match /trips/{tripId} {
       allow read: if signedIn();
 
-      // Create: driver can only create trips for themselves.
+      // Create: driver can only create trips for themselves, and never with a
+      // Mate already on it — a trip starts unassigned and the backend names the
+      // Mate afterwards, after checking the connection.
       allow create: if signedIn()
         && request.resource.data.driverId == request.auth.uid
         && fieldExists("routeId")
         && fieldExists("status")
+        && !request.resource.data.keys().hasAny(["mateId", "mateActive", "mateAssignedAt"])
         && reasonableSize();
 
       // Update: driver can update their own trips; admin can update any.
-      // The driverId and routeId cannot be changed after creation.
+      // The driverId and routeId cannot be changed after creation, and the
+      // assignment/lifecycle fields are the backend's (see the helper above).
       allow update: if isAdmin()
         || (signedIn()
           && resource.data.driverId == request.auth.uid
           && ownerFieldUnchanged("driverId")
           && ownerFieldUnchanged("routeId")
+          && backendOnlyTripFieldsUnchanged()
           && reasonableSize());
 
       allow delete: if isAdmin();

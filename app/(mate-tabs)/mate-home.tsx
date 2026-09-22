@@ -31,6 +31,22 @@ function greeting(): string {
   return "Good evening";
 }
 
+/** The trip's own status, in the words a Mate would actually use. */
+function tripStatusLabel(status: unknown): string {
+  switch (String(status)) {
+    case "online":
+      return "Started";
+    case "boarding":
+      return "Boarding";
+    case "in_progress":
+      return "On the way";
+    case "scheduled":
+      return "Scheduled";
+    default:
+      return "Working";
+  }
+}
+
 const HELD_STATUSES = ["pending", "awaiting_payment"];
 const ABOARD_STATUSES = ["confirmed", "picked_up"];
 
@@ -168,6 +184,20 @@ export default function MateHomeScreen() {
   const pendingRequest = requests.find((r) => r.status === "pending") ?? null;
   const routeLabel = route ? `${route.origin} → ${route.destination}` : "Trip in progress";
 
+  // Booking progress on this trip, from the bookings already being listened to.
+  const progressLabel = (() => {
+    const count = (status: string) =>
+      tripBookings.filter((b) => String(b.status) === status).length;
+    const parts = [
+      count("pending") ? `${count("pending")} waiting to answer` : "",
+      count("awaiting_payment") ? `${count("awaiting_payment")} waiting to pay` : "",
+      count("confirmed") ? `${count("confirmed")} paid` : "",
+      count("picked_up") ? `${count("picked_up")} on board` : "",
+      count("completed") ? `${count("completed")} dropped off` : "",
+    ].filter(Boolean);
+    return parts.length ? parts.join(" · ") : "No passengers yet.";
+  })();
+
   const openTab = (tab: "mate-passengers" | "mate-driver") =>
     router.navigate(`/${tab}`);
 
@@ -215,7 +245,7 @@ export default function MateHomeScreen() {
                   <View style={styles.livePill}>
                     <View style={styles.liveDot} />
                     <AppText variant="caption" style={styles.liveText}>
-                      Working
+                      {tripStatusLabel(trip.status)}
                     </AppText>
                   </View>
                 </View>
@@ -233,6 +263,12 @@ export default function MateHomeScreen() {
                   <AppText variant="caption" style={[styles.metaText, ds.secondary]} numberOfLines={1}>
                     {driver?.vehicleRegistration || "Vehicle"}
                     {driver?.vehicleColor ? ` · ${driver.vehicleColor}` : ""}
+                  </AppText>
+                </View>
+                <View style={styles.metaRow}>
+                  <MaterialCommunityIcons name="account-group" size={15} color={colors.textSecondary} />
+                  <AppText variant="caption" style={[styles.metaText, ds.secondary]} numberOfLines={2}>
+                    {progressLabel}
                   </AppText>
                 </View>
               </View>

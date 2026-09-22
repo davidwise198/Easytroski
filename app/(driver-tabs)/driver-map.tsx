@@ -30,10 +30,11 @@ import { getActiveRoutes, startTrip, endTrip, cancelBooking, updateDriverSeats, 
 import { fetchRoutePath, RoutePath } from "../../src/services/directions";
 import { haversineMeters, formatDistance, formatEta, etaFromDistance } from "../../src/utils/geo";
 import { formatPesewas } from "../../src/utils/money";
+import { subscribeDriver } from "../../src/services/mates";
 import { COLORS, SPACING } from "../../src/theme";
 import { useThemeColors } from "../../src/contexts/ThemeContext";
 import { useMemo } from "react";
-import { Route, Trip, TripStatus } from "../../src/types/models";
+import { Driver, Route, Trip, TripStatus } from "../../src/types/models";
 import { showToast } from "../../src/utils/toast";
 
 // Ghana/Omanjor default center
@@ -130,6 +131,7 @@ export default function DriverMapScreen() {
   const [starting, setStarting] = useState(false);
   const [ending, setEnding] = useState(false);
   const [seatCount, setSeatCount] = useState(12);
+  const [vehicle, setVehicle] = useState<Driver | null>(null);
   const [panelExpanded, setPanelExpanded] = useState(true);
   const [pickupLocations, setPickupLocations] = useState<Array<{ id: string; latitude: number; longitude: number; passengerName: string; seats: number; status: string }>>([]);
   const [selectedPickup, setSelectedPickup] = useState<{ id: string; latitude: number; longitude: number; passengerName: string; seats: number; status: string } | null>(null);
@@ -490,6 +492,13 @@ export default function DriverMapScreen() {
     [user?.uid, bookings, activeTrip]
   );
 
+  // The driver's own vehicle document — read-only here.
+  useEffect(() => {
+    const uid = user?.uid;
+    if (!uid) return;
+    return subscribeDriver(uid, setVehicle, () => {});
+  }, [user?.uid]);
+
   const handleUpdateSeats = useCallback(
     async (newCount: number) => {
       const driverId = user?.uid;
@@ -588,6 +597,28 @@ export default function DriverMapScreen() {
   // itself, so the booking rows say who handles them instead of offering
   // buttons that the backend would refuse.
   const mateOnTrip = Boolean(activeTrip?.mateId && activeTrip?.mateActive !== false);
+
+  // The plate and colour written at onboarding, so the trip card shows what is
+  // actually on the road rather than just a route name.
+  const vehicleLabel = vehicle?.vehicleRegistration
+    ? `Vehicle ${vehicle.vehicleRegistration}${
+        vehicle.vehicleColor ? ` · ${vehicle.vehicleColor}` : ""
+      }`
+    : "Vehicle details not set";
+
+  // Passenger progress at a glance, from the bookings already loaded — this is
+  // monitoring for the driver, and every decision still belongs to the Mate.
+  const progressLabel = (() => {
+    const count = (status: string) => bookings.filter((b: any) => b.status === status).length;
+    const parts = [
+      count("pending") ? `${count("pending")} waiting` : "",
+      count("awaiting_payment") ? `${count("awaiting_payment")} waiting to pay` : "",
+      count("confirmed") ? `${count("confirmed")} paid` : "",
+      count("picked_up") ? `${count("picked_up")} on board` : "",
+      count("completed") ? `${count("completed")} dropped off` : "",
+    ].filter(Boolean);
+    return parts.length ? parts.join(" · ") : "No passengers yet.";
+  })();
 
   const hasActiveTrip = activeTrip !== null;
   const isTripActive =
@@ -837,10 +868,33 @@ export default function DriverMapScreen() {
               {/* Who is answering passenger requests on this trip */}
               <View style={styles.tripMateRow}>
                 <MaterialCommunityIcons name="account-tie" size={15} color={COLORS.accent} />
-                <AppText variant="caption" style={styles.tripMateText} numberOfLines={2}>
-                  {mateOnTrip
-                    ? `${activeTrip.mateName || "Your Mate"} is handling passenger requests.`
-                    : "Assign a Mate to take booking requests."}
+                <View style={styles.tripMateCopy}>
+                  <AppText variant="caption" style={styles.tripMateText} numberOfLines={2}>
+                    {mateOnTrip
+                      ? `${activeTrip.mateName || "Your Mate"} is handling passenger requests.`
+                      : "No Mate assigned — passenger booking requests cannot be handled."}
+                  </AppText>
+                  {mateOnTrip && activeTrip.mateCode ? (
+                    <AppText variant="caption" style={styles.tripMateCode}>
+                      Mate ID: {activeTrip.mateCode}
+                    </AppText>
+                  ) : null}
+                </View>
+              </View>
+
+              {/* What is on the road */}
+              <View style={styles.tripMetaRow}>
+                <MaterialCommunityIcons name="bus" size={15} color={COLORS.textSecondary} />
+                <AppText variant="caption" style={styles.tripMetaText} numberOfLines={1}>
+                  {vehicleLabel}
+                </AppText>
+              </View>
+
+              {/* Passenger progress — monitoring only */}
+              <View style={styles.tripMetaRow}>
+                <MaterialCommunityIcons name="account-group" size={15} color={COLORS.textSecondary} />
+                <AppText variant="caption" style={styles.tripMetaText} numberOfLines={2}>
+                  {progressLabel}
                 </AppText>
               </View>
               {/* Seat counter */}
@@ -1151,10 +1205,32 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     backgroundColor: "rgba(245,158,11,0.10)",
   },
+  tripMateCopy: {
+    flex: 1,
+  },
   tripMateText: {
     flex: 1,
     fontSize: 12,
     lineHeight: 17,
+  },
+  tripMateCode: {
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 2,
+    color: COLORS.textSecondary,
+  },
+  tripMetaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 8,
+    paddingHorizontal: 12,
+  },
+  tripMetaText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 17,
+    color: COLORS.textSecondary,
   },
   // ─── Mate-only booking decisions ───
   mateNeededRow: {
