@@ -15,7 +15,7 @@ import { showToast } from "../../src/utils/toast";
 export default function RoleSelectionScreen() {
   const [loading, setLoading] = useState(false);
 
-  const handleRoleSelection = async (role: "passenger" | "driver") => {
+  const handleRoleSelection = async (role: "passenger" | "driver" | "mate") => {
     const user = auth.currentUser;
 
     if (!user) {
@@ -30,6 +30,10 @@ export default function RoleSelectionScreen() {
       // Navigate directly — this screen isn't wrapped with AuthGate.
       if (role === "driver") {
         router.replace("/auth/driver-onboarding");
+      } else if (role === "mate") {
+        // A mate's profile and Mate ID are created on first open; joining a
+        // driver comes straight after.
+        router.replace("/mate-join");
       } else {
         router.replace("/home");
       }
@@ -66,6 +70,13 @@ export default function RoleSelectionScreen() {
             tone="blue"
             delay={250}
             onPress={() => !loading && void handleRoleSelection("driver")}
+          />
+          <RoleActionCard
+            icon="account-tie"
+            title="I'm a Mate"
+            description="Handle passengers and seats on a trip"
+            delay={350}
+            onPress={() => !loading && void handleRoleSelection("mate")}
           />
         </View>
       </View>

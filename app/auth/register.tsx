@@ -22,11 +22,12 @@ import { getFriendlyError } from "../../src/utils/firebaseErrors";
 import { validateEmail, isEmailFormatValid } from "../../src/utils/emailValidation";
 import { showToast } from "../../src/utils/toast";
 
-type UserRole = "passenger" | "driver";
+type UserRole = "passenger" | "driver" | "mate";
 
 export default function RegisterScreen() {
   const params = useLocalSearchParams<{ role?: string }>();
-  const userRole: UserRole = params.role === "driver" ? "driver" : "passenger";
+  const userRole: UserRole =
+    params.role === "driver" ? "driver" : params.role === "mate" ? "mate" : "passenger";
 
   const [fullName, setFullName] = useState("");
   const [phoneNumber, setPhoneNumber] = useState("");
@@ -154,7 +155,11 @@ export default function RegisterScreen() {
           </View>
 
           <SectionTitle>
-            {userRole === "driver" ? "Driver Registration" : "Passenger Registration"}
+            {userRole === "driver"
+              ? "Driver Registration"
+              : userRole === "mate"
+                ? "Mate Registration"
+                : "Passenger Registration"}
           </SectionTitle>
 
           <AppText
@@ -163,7 +168,9 @@ export default function RegisterScreen() {
           >
             {userRole === "driver"
               ? "Create your driver account to start offering rides"
-              : "Create your passenger account to book rides"}
+              : userRole === "mate"
+                ? "Create your mate account to handle passengers and seats"
+                : "Create your passenger account to book rides"}
           </AppText>
         </View>
 

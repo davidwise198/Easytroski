@@ -197,9 +197,14 @@ service cloud.firestore {
     // Passengers keep read access (their history) and delete (clear history).
 
     match /bookings/{bookingId} {
+      // `mateId` is written by the backend while a mate is assigned to that
+      // booking's trip, and cleared when they come off it. It grants read
+      // access to exactly one booking's worth of information — never any
+      // authority, which is always re-resolved on the server.
       allow read: if signedIn()
         && (resource.data.passengerId == request.auth.uid
           || resource.data.driverId == request.auth.uid
+          || resource.data.mateId == request.auth.uid
           || isAdmin());
 
       allow create, update: if false;

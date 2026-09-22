@@ -19,6 +19,8 @@
 
 import {
   collection,
+  doc,
+  getDoc,
   limit,
   onSnapshot,
   query,
@@ -28,8 +30,11 @@ import {
 import { db } from "./firebase";
 import { callPaymentsApi } from "./payments";
 import type {
+  Booking,
+  Driver,
   MateConnection,
   MateJoinRequest,
+  Route,
   Trip,
 } from "../types/models";
 
@@ -202,7 +207,7 @@ export function subscribeMateJoinRequests(
  */
 export function subscribeMateActiveTrip(
   mateId: string,
-  onUpdate: (trip: Trip | null) => void,
+  onUpdate: (trip: Trip | null, allTrips: Trip[]) => void,
   onError?: (error: Error) => void
 ): () => void {
   const tripsQuery = query(collection(db, "trips"), where("mateId", "==", mateId), limit(10));
@@ -211,8 +216,55 @@ export function subscribeMateActiveTrip(
     tripsQuery,
     (snapshot) => {
       const trips = snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Trip[];
-      onUpdate(trips.find((trip) => isMateWorkingTrip(trip)) ?? null);
+      onUpdate(trips.find((trip) => isMateWorkingTrip(trip)) ?? null, trips);
     },
     (error) => onError?.(error as Error)
   );
+}
+
+/**
+ * The bookings this mate may work on: the backend stamps `mateId` on a trip's
+ * live bookings while they are assigned to it, and clears it when they come
+ * off. Read-only — every action still goes through the backend, which
+ * re-checks the live assignment.
+ */
+export function subscribeMateBookings(
+  mateId: string,
+  onUpdate: (bookings: Booking[]) => void,
+  onError?: (error: Error) => void
+): () => void {
+  const bookingsQuery = query(
+    collection(db, "bookings"),
+    where("mateId", "==", mateId),
+    limit(40)
+  );
+
+  return onSnapshot(
+    bookingsQuery,
+    (snapshot) => {
+      onUpdate(snapshot.docs.map((d) => ({ id: d.id, ...d.data() })) as Booking[]);
+    },
+    (error) => onError?.(error as Error)
+  );
+}
+
+/** Live driver document: name, plate and the seat count the backend owns. */
+export function subscribeDriver(
+  driverId: string,
+  onUpdate: (driver: Driver | null) => void,
+  onError?: (error: Error) => void
+): () => void {
+  return onSnapshot(
+    doc(db, "drivers", driverId),
+    (snapshot) => {
+      onUpdate(snapshot.exists() ? ({ id: snapshot.id, ...snapshot.data() } as Driver) : null);
+    },
+    (error) => onError?.(error as Error)
+  );
+}
+
+/** One-shot route lookup — the trip document only carries the id. */
+export async function fetchRoute(routeId: string): Promise<Route | null> {
+  const snapshot = await getDoc(doc(db, "routes", routeId));
+  return snapshot.exists() ? ({ id: snapshot.id, ...snapshot.data() } as Route) : null;
 }

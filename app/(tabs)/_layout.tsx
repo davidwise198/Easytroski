@@ -37,10 +37,18 @@ export default function PassengerTabsLayout() {
       router.replace("/driver-home");
     } else if (userRole === "admin") {
       router.replace("/admin-routes");
+    } else if (userRole === "mate") {
+      router.replace("/mate-home");
     }
   }, [loading, user, userRole]);
 
-  if (loading || !user || userRole === "driver" || userRole === "admin") {
+  if (
+    loading ||
+    !user ||
+    userRole === "driver" ||
+    userRole === "admin" ||
+    userRole === "mate"
+  ) {
     return null;
   }
 

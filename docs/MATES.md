@@ -107,21 +107,34 @@ Guards that deliberately say no:
 
 - **Phase 0 — foundation (done):** role union, IDs, `mates` profile, connection,
   join requests, trip assignment, booking authority, audit vocabulary, rules.
-  Backend only — no screens are wired yet.
-- **Phase 1 — mate app:** `(mate-tabs)` Home / Passengers / My Driver, join flow,
-  role plumbing across the auth screens, Driver ID shown to the driver.
-- **Phase 2 — driver app:** My Mates section (Driver ID + Copy/Share, requests,
-  assign/remove), attribution on the bookings list.
-- **Phase 3 — security:** extend `bookings` reads to the mate assigned to the
-  trip (via a `get()` on the trip), deploy.
+- **Phase 1 — mate app (done):** `(mate-tabs)` Home / Passengers / My Driver,
+  the Join a Driver flow, role plumbing across every auth screen, the driver's
+  My Mates card (Driver ID + Copy/Share, requests, assign/remove).
+- **Phase 2 — driver app:** attribution shown on the driver's bookings list,
+  mate-aware booking cards, any remaining driver-side polish.
+- **Phase 3 — security review:** confirm the shipped rules match intent on a
+  device and add anything the mate flows turn out to need.
 - **Phase 4 — seats:** dropping a passenger off returns their seats to the trip
   (reusing the existing release-once guard), mate seat adjustment within
   vehicle capacity, mate notifications.
 
+## Booking read visibility (shipped in Phase 1)
+
+A security rule cannot follow a trip assignment, so the backend stamps `mateId`
+and `mateName` on a trip's live bookings when a mate is assigned, and clears
+them when the mate comes off (`stampBookingsMate` in `_shared/mates.ts`). The
+rule `resource.data.mateId == request.auth.uid` then grants that one mate read
+access. This is **visibility only** — authority is re-resolved server-side by
+`resolveBookingActor()` on every accept, reject, pickup and completion, and by
+the action endpoints for joins, assignment and leaving.
+
 ## Not yet built (so nobody assumes it works)
 
-* No mate screens and no routing for the `mate` role — a mate account lands on the
-  passenger tabs until Phase 1.
 * No in-app notification inbox exists for any role; the backend writes
   `notifications/{id}` and mate events use the same path.
-* Seats are not returned on drop-off yet (Phase 4).
+* Seats are not returned on drop-off yet (Phase 4), so a mate cannot yet resell
+  a seat freed mid-route.
+* A mate cannot adjust the seat count on offer yet (Phase 4) — the screens show
+  capacity, confirmed, held and available seats, all read from the backend.
+* The driver's bookings list still words the accept card for the driver; when a
+  mate is on the trip the driver can still act as fallback (by design).

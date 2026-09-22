@@ -142,7 +142,8 @@ const FRIENDLY_MESSAGES: Record<PaymentsErrorCode, string> = {
   too_many_requests: "Too many requests for now. Please wait before trying again.",
   mate_profile_missing: "Your mate profile is missing. Please sign in again.",
   mate_busy: "That mate is already working on another trip.",
-  mate_assigned_to_trip: "This mate is still on a trip. Finish the trip first.",
+  mate_assigned_to_trip:
+    "There's still a trip running. Finish it before this mate is removed or leaves.",
   trip_not_running: "Start the trip before doing that.",
   trip_has_passengers: "There are still passengers on this trip. Finish them first.",
   unknown: "We couldn't complete that. Please try again.",

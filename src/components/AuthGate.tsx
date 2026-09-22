@@ -41,8 +41,12 @@ export default function AuthGate({ children, allowedRoles }: AuthGateProps) {
     if (allowedRoles && !allowedRoles.includes(userRole)) {
       if (userRole === "admin") {
         router.replace("/admin-routes");
+      } else if (userRole === "driver") {
+        router.replace("/driver-home");
+      } else if (userRole === "mate") {
+        router.replace("/mate-home");
       } else {
-        router.replace(userRole === "driver" ? "/driver-home" : "/home");
+        router.replace("/home");
       }
       return;
     }

@@ -899,14 +899,22 @@ export default function AdminDashboardScreen() {
           <AppText variant="body" style={{ marginBottom: SPACING.md, color: COLORS.textSecondary }}>
             Change role for {editItem.name || editItem.email || editItem.id}
           </AppText>
-          {["passenger", "driver", "admin"].map((role) => (
+          {["passenger", "driver", "mate", "admin"].map((role) => (
             <Pressable
               key={role}
               style={[styles.roleOption, editField === role && styles.roleOptionActive]}
               onPress={() => setEditField(role)}
             >
               <MaterialCommunityIcons
-                name={role === "admin" ? "shield-crown" : role === "driver" ? "steering" : "account"}
+                name={
+                  role === "admin"
+                    ? "shield-crown"
+                    : role === "driver"
+                      ? "steering"
+                      : role === "mate"
+                        ? "account-tie"
+                        : "account"
+                }
                 size={18}
                 color={editField === role ? COLORS.white : COLORS.primary}
               />

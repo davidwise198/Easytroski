@@ -34,6 +34,8 @@ export default function Index() {
         router.replace("/admin-routes");
       } else if (userRole === "driver") {
         router.replace("/driver-home");
+      } else if (userRole === "mate") {
+        router.replace("/mate-home");
       } else {
         router.replace("/home");
       }
@@ -156,6 +158,13 @@ export default function Index() {
               tone="blue"
               delay={560}
               onPress={() => router.push("/auth/register?role=driver")}
+            />
+            <RoleActionCard
+              icon="account-tie"
+              title="Continue as Mate"
+              description="Handle passengers and seats on a trip."
+              delay={650}
+              onPress={() => router.push("/auth/register?role=mate")}
             />
           </View>
 

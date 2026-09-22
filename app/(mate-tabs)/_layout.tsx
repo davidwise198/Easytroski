@@ -9,42 +9,38 @@ import { useThemeColors } from "../../src/contexts/ThemeContext";
 
 type IconName = keyof typeof MaterialCommunityIcons.glyphMap;
 
-// Modern floating-pill tab bar: the active icon sits inside a filled
-// capsule, the bar itself floats as a rounded pill above the bottom edge.
+// Same floating-pill tab bar as the passenger and driver tabs — the mate
+// experience is part of EasyTroski, not a separate app.
 function pillIcon(name: IconName, activeColor: string) {
   return ({ focused, color }: { focused: boolean; color: string }) => (
     <View style={[styles.capsule, focused && { backgroundColor: activeColor }]}>
-      <MaterialCommunityIcons
-        name={name}
-        size={22}
-        color={focused ? "#FFFFFF" : color}
-      />
+      <MaterialCommunityIcons name={name} size={22} color={focused ? "#FFFFFF" : color} />
     </View>
   );
 }
 
-export default function DriverTabsLayout() {
+export default function MateTabsLayout() {
   const { user, userRole, loading } = useAuth();
   const { colors, isDark } = useThemeColors();
   const insets = useSafeAreaInsets();
 
-  // Only drivers may use these tabs.
+  // Only mates may use these tabs. Everyone else goes back to their own home.
   useEffect(() => {
     if (loading) return;
     if (!user) {
       router.replace("/auth/login");
-    } else if (userRole !== "driver") {
+    } else if (userRole !== "mate") {
       router.replace(
         userRole === "admin"
           ? "/admin-routes"
-          : userRole === "mate"
-            ? "/mate-home"
+          : userRole === "driver"
+            ? "/driver-home"
             : "/home"
       );
     }
   }, [loading, user, userRole]);
 
-  if (loading || !user || userRole !== "driver") {
+  if (loading || !user || userRole !== "mate") {
     return null;
   }
 
@@ -79,16 +75,16 @@ export default function DriverTabsLayout() {
       }}
     >
       <Tabs.Screen
-        name="driver-home"
+        name="mate-home"
         options={{ title: "Home", tabBarIcon: pillIcon("home-variant", colors.primary) }}
       />
       <Tabs.Screen
-        name="driver-map"
-        options={{ title: "Map", tabBarIcon: pillIcon("map-outline", colors.primary) }}
+        name="mate-passengers"
+        options={{ title: "Passengers", tabBarIcon: pillIcon("account-group", colors.primary) }}
       />
       <Tabs.Screen
-        name="driver-trips"
-        options={{ title: "Trips", tabBarIcon: pillIcon("history", colors.primary) }}
+        name="mate-driver"
+        options={{ title: "My Driver", tabBarIcon: pillIcon("steering", colors.primary) }}
       />
     </Tabs>
   );

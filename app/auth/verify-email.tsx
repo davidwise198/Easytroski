@@ -74,7 +74,9 @@ export default function VerifyEmailScreen() {
             ? "/driver-home"
             : role === "admin"
               ? "/admin-routes"
-              : "/home"
+              : role === "mate"
+                ? "/mate-home"
+                : "/home"
         );
       } else {
         showToast(

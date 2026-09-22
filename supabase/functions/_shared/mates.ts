@@ -586,6 +586,57 @@ export async function removeMate(driverId: string, mateId: string) {
   return { mateId, status: "removed" as const };
 }
 
+// ─── Read visibility ──────────────────────────────────────────────────────
+
+/** Bookings that are still this trip's live work. */
+const LIVE_BOOKING_STATUSES = ["pending", "awaiting_payment", "confirmed", "picked_up"];
+
+/**
+ * Stamp (or clear) the mate on the live bookings of a trip.
+ *
+ * This is **read visibility only**. The security rules can then say "this mate
+ * may read bookings that name them", which the rules engine can evaluate on a
+ * simple query — it cannot follow the assignment itself. Authority is never
+ * taken from this field: `resolveBookingActor()` re-checks the live assignment
+ * on every accept, reject, pickup and completion, so clearing a stamp early or
+ * late can only change what someone *sees*, never what they can do.
+ */
+async function stampBookingsMate(
+  driverId: string,
+  tripId: string,
+  mate: { id: string; name: string | null } | null
+): Promise<number> {
+  if (!driverId) return 0;
+
+  const bookings = await queryDocuments({
+    collection: "bookings",
+    filters: [{ field: "driverId", value: driverId }],
+    limit: 50,
+  });
+
+  let stamped = 0;
+  for (const booking of bookings) {
+    if (!LIVE_BOOKING_STATUSES.includes(String(booking.data.status))) continue;
+    // A booking made before the driver's trip existed belongs to this trip too.
+    if (booking.data.tripId && booking.data.tripId !== tripId) continue;
+
+    try {
+      await commit([
+        updateWrite(
+          `bookings/${booking.id}`,
+          { mateId: mate?.id ?? null, mateName: mate?.name ?? null, updatedAt: nowIso() },
+          ["mateId", "mateName", "updatedAt"],
+          booking.updateTime
+        ),
+      ]);
+      stamped += 1;
+    } catch {
+      // The booking moved on underneath us — it is no longer this trip's work.
+    }
+  }
+  return stamped;
+}
+
 // ─── Trip assignment ──────────────────────────────────────────────────────
 
 /**
@@ -630,6 +681,9 @@ export async function assignMate(driverId: string, tripId: string, mateId: strin
       trip.updateTime
     ),
   ]);
+
+  // Live bookings that are already waiting become visible to this mate.
+  await stampBookingsMate(driverId, tripId, { id: mateId, name: mateName });
 
   await writeAudit({
     event: "MATE_ASSIGNED",
@@ -694,6 +748,9 @@ export async function unassignMate(driverId: string, tripId: string) {
     ),
   ]);
 
+  // The mate stops seeing this trip's bookings the moment they come off it.
+  await stampBookingsMate(driverId, tripId, null);
+
   await writeAudit({
     event: "MATE_UNASSIGNED",
     entityType: "trip",
@@ -726,6 +783,8 @@ export async function clearMateOnTripEnd(trip: FsDoc): Promise<void> {
   } catch {
     // The trip already moved on; the assignment still ended.
   }
+
+  await stampBookingsMate(String(trip.data.driverId || ""), trip.id, null);
 
   await writeAudit({
     event: "MATE_UNASSIGNED",

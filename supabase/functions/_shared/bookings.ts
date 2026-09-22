@@ -131,6 +131,15 @@ export async function createBookingRequest(input: CreateBookingInput): Promise<{
   const holdExpiresAt = isoPlusMinutes(HOLD_MINUTES);
   const trip = await getActiveTripForDriver(input.driverId);
 
+  // Read visibility only: while a mate is working this trip, the booking names
+  // them so the security rules can grant that one mate read access. Authority
+  // never comes from here — resolveBookingActor() re-checks the live assignment
+  // on every action.
+  const mateId =
+    trip && trip.data.mateActive !== false && trip.data.mateId ? String(trip.data.mateId) : null;
+  const mateName =
+    typeof trip?.data.mateName === "string" && trip.data.mateName ? trip.data.mateName : null;
+
   await withRetry(async () => {
     const driver = await getDocument(`drivers/${input.driverId}`);
     if (!driver) throw new ApiError("driver_unavailable", "That driver is no longer available.", 404);
@@ -155,6 +164,8 @@ export async function createBookingRequest(input: CreateBookingInput): Promise<{
         driverId: input.driverId,
         routeId: input.routeId,
         tripId: trip?.id ?? null,
+        mateId,
+        mateName,
         pickupLocation: input.pickupLocation,
         dropOffLocation: input.dropOffLocation,
         seats,

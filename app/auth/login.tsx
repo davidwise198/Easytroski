@@ -43,8 +43,12 @@ export default function LoginScreen() {
         router.replace("/auth/role-selection");
       } else if (role === "admin") {
         router.replace("/admin-routes");
+      } else if (role === "driver") {
+        router.replace("/driver-home");
+      } else if (role === "mate") {
+        router.replace("/mate-home");
       } else {
-        router.replace(role === "driver" ? "/driver-home" : "/home");
+        router.replace("/home");
       }
     } catch (error) {
       console.error("Login error:", error);

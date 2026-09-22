@@ -34,6 +34,7 @@ import {
   updateDriverDefaultRoute,
 } from "../src/services/transport";
 import { showToast } from "../src/utils/toast";
+import { ensureMyIds, subscribeMateConnections } from "../src/services/mates";
 
 export default function ProfileScreen() {
   const { user, signOut } = useAuth();
@@ -57,6 +58,8 @@ export default function ProfileScreen() {
   const [defaultRouteId, setDefaultRouteId] = useState<string | null>(null);
   const [savingRoute, setSavingRoute] = useState(false);
   const [name, setName] = useState("");
+  const [mateCode, setMateCode] = useState<string | null>(null);
+  const [mateDriverName, setMateDriverName] = useState<string | null>(null);
 
   useEffect(() => {
     if (user?.uid) {
@@ -83,6 +86,31 @@ export default function ProfileScreen() {
         if (id) setDefaultRouteId(id);
       })
       .catch(() => {});
+  }, [profile?.role, user?.uid]);
+
+  // Mates: their own Mate ID, and the driver they currently work with.
+  useEffect(() => {
+    const uid = user?.uid;
+    if (profile?.role !== "mate" || !uid) return;
+    let cancelled = false;
+    ensureMyIds()
+      .then((ids) => {
+        if (!cancelled) setMateCode(ids.mateCode ?? null);
+      })
+      .catch(() => {});
+    const unsub = subscribeMateConnections(
+      uid,
+      (rows) => {
+        if (!cancelled) {
+          setMateDriverName(rows.find((c) => c.status === "active")?.driverName ?? null);
+        }
+      },
+      () => {}
+    );
+    return () => {
+      cancelled = true;
+      unsub();
+    };
   }, [profile?.role, user?.uid]);
 
   const photoURL = getPhotoURL(user, profile);
@@ -288,7 +316,15 @@ export default function ProfileScreen() {
           <AppText variant="heading" style={[styles.fieldLabel, ds.fieldLabel]}>Role</AppText>
           <View style={styles.roleBadge}>
             <MaterialCommunityIcons
-              name={profile?.role === "driver" ? "steering" : "account"}
+              name={
+                profile?.role === "driver"
+                  ? "steering"
+                  : profile?.role === "mate"
+                    ? "account-tie"
+                    : profile?.role === "admin"
+                      ? "shield-crown"
+                      : "account"
+              }
               size={14}
               color={COLORS.white}
             />
@@ -340,6 +376,26 @@ export default function ProfileScreen() {
                 })}
               </View>
             )}
+          </View>
+        )}
+
+        {/* Mate — the ID they are known by, and who they work with */}
+        {profile?.role === "mate" && (
+          <View style={[styles.fieldCard, ds.fieldCard]}>
+            <AppText variant="heading" style={[styles.fieldLabel, ds.fieldLabel]}>
+              Mate ID
+            </AppText>
+            <AppText variant="body" style={[styles.fieldValue, ds.fieldValue]}>
+              {mateCode || "Being created..."}
+            </AppText>
+            <Pressable
+              onPress={() => router.push("/mate-driver")}
+              style={({ pressed }) => [pressed && { opacity: 0.7 }]}
+            >
+              <AppText variant="caption" style={styles.mateLink}>
+                {mateDriverName ? `Working with ${mateDriverName}` : "My Driver"} →
+              </AppText>
+            </Pressable>
           </View>
         )}
 
@@ -511,6 +567,11 @@ const styles = StyleSheet.create({
     backgroundColor: COLORS.primary,
     alignSelf: "flex-start",
     marginTop: SPACING.xs,
+  },
+  mateLink: {
+    color: COLORS.primary,
+    fontWeight: "700",
+    marginTop: SPACING.sm,
   },
   roleBadgeText: {
     color: COLORS.white,

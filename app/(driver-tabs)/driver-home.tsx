@@ -2,10 +2,14 @@ import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Animated,
+  // Built-in clipboard + share only: adding expo-clipboard would be a native
+  // module, and therefore a fresh APK build, which this feature can't justify.
+  Clipboard,
   Easing,
   Image,
   Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Switch,
   View,
@@ -40,9 +44,17 @@ import {
   friendlyPaymentError,
   requestPayout,
 } from "../../src/services/payments";
+import {
+  assignMateToTrip,
+  decideJoinRequest,
+  ensureMyIds,
+  subscribeDriverConnections,
+  subscribeDriverJoinRequests,
+  unassignMateFromTrip,
+} from "../../src/services/mates";
 import { formatPesewas } from "../../src/utils/money";
 import { COLORS, SPACING } from "../../src/theme";
-import { Route, Trip } from "../../src/types/models";
+import { MateConnection, MateJoinRequest, Route, Trip } from "../../src/types/models";
 import { showToast } from "../../src/utils/toast";
 
 /** Wallet buckets written by the backend; the app only ever reads them. */
@@ -155,6 +167,11 @@ export default function DriverDashboardScreen() {
   const [seatCount, setSeatCount] = useState(12);
   const [wallet, setWallet] = useState(EMPTY_WALLET);
   const [payoutBusy, setPayoutBusy] = useState(false);
+  const [driverCode, setDriverCode] = useState<string | null>(null);
+  const [mateRequests, setMateRequests] = useState<MateJoinRequest[]>([]);
+  const [mates, setMates] = useState<MateConnection[]>([]);
+  const [mateBusyId, setMateBusyId] = useState<string | null>(null);
+  const [assignedMateId, setAssignedMateId] = useState<string | null>(null);
 
   // Fetch user profile
   useEffect(() => {
@@ -185,6 +202,32 @@ export default function DriverDashboardScreen() {
     );
     return unsub;
   }, [user?.uid]);
+
+  // Driver ID, mate requests and connected mates — all live, so a request that
+  // arrives while the driver is looking at this screen appears immediately.
+  useEffect(() => {
+    const uid = user?.uid;
+    if (!uid) return;
+    let cancelled = false;
+    ensureMyIds()
+      .then((ids) => {
+        if (!cancelled) setDriverCode(ids.driverCode ?? null);
+      })
+      .catch(() => {});
+    const unsubRequests = subscribeDriverJoinRequests(uid, setMateRequests, () => {});
+    const unsubConnections = subscribeDriverConnections(uid, setMates, () => {});
+    return () => {
+      cancelled = true;
+      unsubRequests();
+      unsubConnections();
+    };
+  }, [user?.uid]);
+
+  // Which mate is on the running trip. Assigning and unassigning update this
+  // straight away so the card never shows a stale decision.
+  useEffect(() => {
+    setAssignedMateId(activeTrip?.mateId ?? null);
+  }, [activeTrip?.id, activeTrip?.mateId]);
 
   const handleWithdraw = async () => {
     if (payoutBusy) return;
@@ -301,6 +344,83 @@ export default function DriverDashboardScreen() {
       }
     };
   }, [online, user?.uid]);
+
+  const pendingMateRequests = mateRequests.filter((r) => r.status === "pending");
+  const connectedMates = mates.filter((m) => m.status === "active");
+
+  const copyDriverId = async () => {
+    if (!driverCode) return;
+    Clipboard.setString(driverCode);
+    showToast("success", "Driver ID copied", "Give it to your mate so they can ask to join you.");
+  };
+
+  const shareDriverId = async () => {
+    if (!driverCode) return;
+    try {
+      await Share.share({
+        message: `Join me as my mate on EasyTroski. My Driver ID is ${driverCode}.`,
+      });
+    } catch {
+      // The user dismissed the share sheet — nothing to report.
+    }
+  };
+
+  const handleMateDecision = async (requestId: string, decision: "accept" | "reject") => {
+    if (mateBusyId) return;
+    setMateBusyId(requestId);
+    try {
+      await decideJoinRequest(requestId, decision);
+      if (decision === "accept") {
+        showToast(
+          "success",
+          "Mate added",
+          "Assign them to a trip when you are ready to drive."
+        );
+      } else {
+        showToast("info", "Request declined", "The mate has been told.");
+      }
+    } catch (error) {
+      showToast("error", "Couldn't do that", friendlyPaymentError(error));
+    } finally {
+      setMateBusyId(null);
+    }
+  };
+
+  const handleAssignMate = async (mateId: string) => {
+    if (!activeTrip) {
+      showToast("info", "Start the trip first", "A mate can only be assigned while a trip is running.");
+      return;
+    }
+    if (mateBusyId) return;
+    setMateBusyId(mateId);
+    try {
+      const result = await assignMateToTrip(activeTrip.id, mateId);
+      setAssignedMateId(result.mateId);
+      showToast(
+        "success",
+        "Mate assigned",
+        "Booking requests go to them now. You can still accept them yourself."
+      );
+    } catch (error) {
+      showToast("error", "Couldn't assign", friendlyPaymentError(error));
+    } finally {
+      setMateBusyId(null);
+    }
+  };
+
+  const handleUnassignMate = async () => {
+    if (!activeTrip || !assignedMateId || mateBusyId) return;
+    setMateBusyId(assignedMateId);
+    try {
+      await unassignMateFromTrip(activeTrip.id);
+      setAssignedMateId(null);
+      showToast("info", "Mate removed from this trip", "You'll handle the bookings yourself.");
+    } catch (error) {
+      showToast("error", "Couldn't remove", friendlyPaymentError(error));
+    } finally {
+      setMateBusyId(null);
+    }
+  };
 
   const handleAvailability = async (nextOnline: boolean) => {
     const driverId = user?.uid;
@@ -633,6 +753,151 @@ export default function DriverDashboardScreen() {
               style={styles.walletButton}
             />
           </View>
+          {/* ─── My Mates ───
+              The Driver ID a mate needs in order to ask to join, the requests
+              that arrive against it, and who is working today's trip. */}
+          <View style={[styles.mateCard, ds.seatCounterCard]}>
+            <View style={styles.mateHeader}>
+              <View style={styles.mateHeaderLeft}>
+                <MaterialCommunityIcons name="account-group" size={20} color={COLORS.primary} />
+                <AppText variant="caption" style={[styles.mateEyebrow, ds.secondary]}>
+                  MY MATES
+                </AppText>
+              </View>
+              {driverCode ? (
+                <View style={styles.mateIdRow}>
+                  <AppText variant="caption" style={[styles.mateIdText, ds.text]}>
+                    {driverCode}
+                  </AppText>
+                  <Pressable
+                    style={({ pressed }) => [styles.mateIconBtn, pressed && { opacity: 0.7 }]}
+                    onPress={() => void copyDriverId()}
+                  >
+                    <MaterialCommunityIcons name="content-copy" size={15} color={COLORS.primary} />
+                  </Pressable>
+                  <Pressable
+                    style={({ pressed }) => [styles.mateIconBtn, pressed && { opacity: 0.7 }]}
+                    onPress={() => void shareDriverId()}
+                  >
+                    <MaterialCommunityIcons name="share-variant" size={15} color={COLORS.primary} />
+                  </Pressable>
+                </View>
+              ) : null}
+            </View>
+
+            <AppText variant="caption" style={[styles.mateHelp, ds.secondary]}>
+              {driverCode
+                ? "Give a mate this ID so they can ask to join you."
+                : "Creating your Driver ID..."}
+            </AppText>
+
+            {pendingMateRequests.length > 0 ? (
+              <View style={styles.mateList}>
+                <AppText variant="caption" style={[styles.mateSectionLabel, ds.secondary]}>
+                  MATE REQUESTS
+                </AppText>
+                {pendingMateRequests.map((request) => (
+                  <View key={request.id} style={styles.mateRow}>
+                    <View style={[styles.mateAvatar, ds.driverIcon]}>
+                      <MaterialCommunityIcons name="account-tie" size={18} color={COLORS.primary} />
+                    </View>
+                    <View style={styles.mateRowCopy}>
+                      <AppText variant="body" style={[styles.mateRowName, ds.text]} numberOfLines={1}>
+                        {request.mateName || "A mate"}
+                      </AppText>
+                      <AppText variant="caption" style={[styles.mateRowSub, ds.secondary]} numberOfLines={1}>
+                        {request.mateCode || "Wants to join you"}
+                      </AppText>
+                    </View>
+                    <View style={styles.mateRowActions}>
+                      <Pressable
+                        style={({ pressed }) => [
+                          styles.mateSmallBtn,
+                          styles.mateRejectBtn,
+                          pressed && { opacity: 0.7 },
+                        ]}
+                        disabled={Boolean(mateBusyId)}
+                        onPress={() => void handleMateDecision(request.id, "reject")}
+                      >
+                        <AppText variant="caption" style={styles.mateRejectText}>
+                          Reject
+                        </AppText>
+                      </Pressable>
+                      <Pressable
+                        style={({ pressed }) => [
+                          styles.mateSmallBtn,
+                          styles.mateAcceptBtn,
+                          pressed && { opacity: 0.7 },
+                        ]}
+                        disabled={Boolean(mateBusyId)}
+                        onPress={() => void handleMateDecision(request.id, "accept")}
+                      >
+                        <AppText variant="caption" style={styles.mateAcceptText}>
+                          Accept
+                        </AppText>
+                      </Pressable>
+                    </View>
+                  </View>
+                ))}
+              </View>
+            ) : null}
+
+            {connectedMates.length > 0 ? (
+              <View style={styles.mateList}>
+                <AppText variant="caption" style={[styles.mateSectionLabel, ds.secondary]}>
+                  YOUR MATES
+                </AppText>
+                {connectedMates.map((mate) => {
+                  const working = assignedMateId === mate.mateId;
+                  return (
+                    <View key={mate.id} style={styles.mateRow}>
+                      <View style={[styles.mateAvatar, ds.driverIcon]}>
+                        <MaterialCommunityIcons
+                          name={working ? "account-check" : "account-tie"}
+                          size={18}
+                          color={working ? COLORS.success : COLORS.primary}
+                        />
+                      </View>
+                      <View style={styles.mateRowCopy}>
+                        <AppText variant="body" style={[styles.mateRowName, ds.text]} numberOfLines={1}>
+                          {mate.mateName || "Your mate"}
+                        </AppText>
+                        <AppText variant="caption" style={[styles.mateRowSub, ds.secondary]} numberOfLines={1}>
+                          {working ? "Working this trip" : "Connected"}
+                        </AppText>
+                      </View>
+                      {activeTrip ? (
+                        <Pressable
+                          style={({ pressed }) => [
+                            styles.mateSmallBtn,
+                            working ? styles.mateRejectBtn : styles.mateAssignBtn,
+                            pressed && { opacity: 0.7 },
+                          ]}
+                          disabled={Boolean(mateBusyId)}
+                          onPress={() =>
+                            working ? void handleUnassignMate() : void handleAssignMate(mate.mateId)
+                          }
+                        >
+                          <AppText
+                            variant="caption"
+                            style={working ? styles.mateRejectText : styles.mateAcceptText}
+                          >
+                            {working ? "Remove" : "Assign"}
+                          </AppText>
+                        </Pressable>
+                      ) : null}
+                    </View>
+                  );
+                })}
+              </View>
+            ) : null}
+
+            {pendingMateRequests.length === 0 && connectedMates.length === 0 ? (
+              <AppText variant="caption" style={[styles.mateHelp, ds.secondary]}>
+                No mates yet. Anyone who enters your Driver ID will appear here for you to approve.
+              </AppText>
+            ) : null}
+          </View>
         </ScrollView>
       </AppBackground>
     </AuthGate>
@@ -644,6 +909,92 @@ export default function DriverDashboardScreen() {
 // ---------------------------------------------------------------------------
 
 const styles = StyleSheet.create({
+  mateCard: {
+    borderWidth: 1,
+    borderRadius: 18,
+    padding: SPACING.lg,
+    marginTop: SPACING.lg,
+  },
+  mateHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: SPACING.sm,
+  },
+  mateHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+  },
+  mateEyebrow: {
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 1,
+  },
+  mateIdRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.xs,
+  },
+  mateIdText: {
+    fontWeight: "800",
+    letterSpacing: 0.6,
+  },
+  mateIconBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: COLORS.blueWash,
+  },
+  mateHelp: {
+    marginTop: SPACING.sm,
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  mateList: {
+    marginTop: SPACING.md,
+  },
+  mateSectionLabel: {
+    fontSize: 10,
+    fontWeight: "800",
+    letterSpacing: 1,
+    marginBottom: SPACING.sm,
+  },
+  mateRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: SPACING.sm,
+    paddingVertical: SPACING.sm,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(23,105,224,0.10)",
+  },
+  mateAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 13,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  mateRowCopy: { flex: 1 },
+  mateRowName: { fontWeight: "600" },
+  mateRowSub: { marginTop: 1, fontSize: 11 },
+  mateRowActions: { flexDirection: "row", gap: SPACING.xs },
+  mateSmallBtn: {
+    paddingHorizontal: SPACING.md,
+    paddingVertical: SPACING.sm,
+    borderRadius: 12,
+  },
+  mateRejectBtn: {
+    backgroundColor: "rgba(239,68,68,0.10)",
+    borderWidth: 1,
+    borderColor: COLORS.danger,
+  },
+  mateRejectText: { color: COLORS.danger, fontWeight: "700" },
+  mateAcceptBtn: { backgroundColor: COLORS.success },
+  mateAssignBtn: { backgroundColor: COLORS.primary },
+  mateAcceptText: { color: COLORS.white, fontWeight: "700" },
   walletCard: {
     borderWidth: 1,
     borderRadius: 18,
