@@ -75,16 +75,28 @@ entrypoint, no second verification path.
 `resolveBookingActor()` in `supabase/functions/_shared/mates.ts` is the single
 answer to "may this caller decide this booking?":
 
-1. **The booking's own driver** — always. This is the fallback from decision 3:
-   a driver with no mate that morning can still run their trotro.
-2. **The mate assigned to that driver's live trip** — and only while assigned.
+1. **The mate assigned to that driver's live trip** — and only while assigned.
    A connected mate with no assignment is refused here.
+2. **Nobody else.** There is **no driver fallback**: a driver who tries to accept,
+   reject, pick up or complete a passenger booking is refused with
+   `mate_required` — *“Assign a Mate before accepting passenger bookings.”*
+   (the wording follows the action: pick up and complete name themselves).
+   Passenger decisions are the mate's job; the driver keeps the vehicle, the
+   route, going online/offline, the trip, and mate management.
+
+Trip-level actions do **not** come through this function — `startTrip`,
+`endTrip` (which cancels the ride and refunds anyone who paid), `setDriverOnline`,
+`setDriverCapacity` and the mate endpoints all authorise the driver directly.
+The backend cancel endpoint (`cancelBookingCore`, `by: "driver"`) also stays with
+the driver: it is the ride-level cancellation that raises refunds, not a
+per-request decision.
 
 Every accept, reject, pickup and completion records **both identities**: the
 booking carries `lastActionBy` / `lastActionByRole`, and `auditLogs` gets
-`actorId` (the person who tapped), `actorRole` (`driver` or `mate`) plus a `meta`
-block with `driverId`, `tripId`, `mateId` and `mateCode`. The driver's identity is
-never replaced by the mate's.
+`actorId` (the person who tapped), `actorRole` (now always `mate` for these
+actions — `driver` remains in the vocabulary because historic records use it)
+plus a `meta` block with `driverId`, `tripId`, `mateId` and `mateCode`. The
+driver's identity is never replaced by the mate's.
 
 Booking decisions write `BOOKING_ACCEPTED` / `BOOKING_REJECTED` /
 `BOOKING_PICKED_UP`, with `actorRole` naming who acted.
@@ -95,6 +107,7 @@ Guards that deliberately say no:
 
 | Situation | Error | Why |
 | --- | --- | --- |
+| A **driver** trying to accept, reject, pick up or complete | `mate_required` | passenger decisions are the mate's; assign one first |
 | Accepting as a mate while not assigned | `not_your_trip` | connection ≠ assignment |
 | Accepting a booking that belongs to a different trip | `not_your_trip` | assignment scopes the authority |
 | Leaving / removing while on a live trip | `mate_assigned_to_trip` | never strand passengers without an authorised mate |
@@ -131,10 +144,12 @@ the action endpoints for joins, assignment and leaving.
 ## Not yet built (so nobody assumes it works)
 
 * No in-app notification inbox exists for any role; the backend writes
-  `notifications/{id}` and mate events use the same path.
+  `notifications/{id}` but nothing reads it, so a new request reaches the mate
+  through the live listener on their Passengers screen rather than a push.
 * Seats are not returned on drop-off yet (Phase 4), so a mate cannot yet resell
   a seat freed mid-route.
 * A mate cannot adjust the seat count on offer yet (Phase 4) — the screens show
   capacity, confirmed, held and available seats, all read from the backend.
-* The driver's bookings list still words the accept card for the driver; when a
-  mate is on the trip the driver can still act as fallback (by design).
+* With no Mate assigned, a driver can start a trip and take requests, but nobody
+  can answer them — requests expire after the seat-hold window. That is the
+  intended pressure to assign a Mate before driving.

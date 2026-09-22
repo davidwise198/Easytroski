@@ -96,6 +96,7 @@ export type PaymentsErrorCode =
   | "too_many_requests"
   | "mate_profile_missing"
   | "mate_busy"
+  | "mate_required"
   | "mate_assigned_to_trip"
   | "trip_not_running"
   | "trip_has_passengers"
@@ -142,6 +143,8 @@ const FRIENDLY_MESSAGES: Record<PaymentsErrorCode, string> = {
   too_many_requests: "Too many requests for now. Please wait before trying again.",
   mate_profile_missing: "Your mate profile is missing. Please sign in again.",
   mate_busy: "That mate is already working on another trip.",
+  // Only ever reached by a driver: passenger decisions belong to the mate.
+  mate_required: "Assign a Mate before accepting passenger bookings.",
   mate_assigned_to_trip:
     "There's still a trip running. Finish it before this mate is removed or leaves.",
   trip_not_running: "Start the trip before doing that.",

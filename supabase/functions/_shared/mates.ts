@@ -813,21 +813,40 @@ export type BookingActor = {
   tripId?: string | null;
 };
 
+/** Which decision the caller is trying to make. Only the wording differs. */
+export type BookingAction = "decide" | "pickup" | "complete";
+
+const MATE_REQUIRED_MESSAGE: Record<BookingAction, string> = {
+  decide: "Assign a Mate before accepting passenger bookings.",
+  pickup: "Assign a Mate before marking passengers picked up.",
+  complete: "Assign a Mate before completing passenger bookings.",
+};
+
 /**
  * The one authority question the booking flows ask.
  *
- *  · the booking's own driver — always, so a trip with no mate still works
  *  · the mate assigned to that driver's live trip — and only while assigned
+ *  · nobody else. A driver is **not** a fallback: passenger decisions are the
+ *    mate's job, so a driver who tries is told to assign one.
  *
  * A connected mate with no trip assignment is rejected here, which is what
  * keeps "allowed to work with" and "working now" from blurring together.
+ *
+ * Trip-level actions (start trip, end trip, cancel the ride, go online) do not
+ * come through here — the driver keeps all of those.
  */
-export async function resolveBookingActor(booking: FsDoc, actorUid: string): Promise<BookingActor> {
+export async function resolveBookingActor(
+  booking: FsDoc,
+  actorUid: string,
+  action: BookingAction = "decide"
+): Promise<BookingActor> {
   const driverId = String(booking.data.driverId || "");
   const bookingTripId = typeof booking.data.tripId === "string" ? booking.data.tripId : null;
 
+  // Deliberately checked before any read: the answer is the same whether or not
+  // a mate happens to be assigned, so a driver can never take a booking action.
   if (actorUid === driverId) {
-    return { driverId, actorId: actorUid, actorRole: "driver", tripId: bookingTripId };
+    throw new ApiError("mate_required", MATE_REQUIRED_MESSAGE[action], 409);
   }
 
   const trip = await getTripAssignedToMate(actorUid);

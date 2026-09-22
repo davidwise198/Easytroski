@@ -46,6 +46,7 @@ export type ApiErrorCode =
   | "too_many_requests"
   | "mate_profile_missing"
   | "mate_busy"
+  | "mate_required"
   | "mate_assigned_to_trip"
   | "trip_not_running"
   | "trip_has_passengers"

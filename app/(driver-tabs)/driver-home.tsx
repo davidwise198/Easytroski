@@ -399,7 +399,7 @@ export default function DriverDashboardScreen() {
       showToast(
         "success",
         "Mate assigned",
-        "Booking requests go to them now. You can still accept them yourself."
+        "They handle passenger bookings from now on."
       );
     } catch (error) {
       showToast("error", "Couldn't assign", friendlyPaymentError(error));
@@ -414,7 +414,11 @@ export default function DriverDashboardScreen() {
     try {
       await unassignMateFromTrip(activeTrip.id);
       setAssignedMateId(null);
-      showToast("info", "Mate removed from this trip", "You'll handle the bookings yourself.");
+      showToast(
+        "info",
+        "Mate removed from this trip",
+        "Assign a Mate before accepting passenger bookings."
+      );
     } catch (error) {
       showToast("error", "Couldn't remove", friendlyPaymentError(error));
     } finally {
@@ -787,7 +791,7 @@ export default function DriverDashboardScreen() {
 
             <AppText variant="caption" style={[styles.mateHelp, ds.secondary]}>
               {driverCode
-                ? "Give a mate this ID so they can ask to join you."
+                ? "Give a mate this ID so they can join you. Your Mate handles passenger bookings, so assign one before you take requests."
                 : "Creating your Driver ID..."}
             </AppText>
 

@@ -245,8 +245,10 @@ export type DecisionResult = { status: string; paymentDeadlineAt?: string };
  * Accept or reject a request.
  *
  * Authority — resolved against live data, never taken from the caller:
- *   · the booking's own driver, so a trip with no mate still works
- *   · the mate assigned to that driver's running trip
+ *   · the mate assigned to that driver's running trip, and nobody else.
+ *
+ * A driver is not a fallback: with no mate assigned the request is refused with
+ * `mate_required`, which is the prompt to assign one before taking bookings.
  */
 export async function driverDecide(
   bookingId: string,
@@ -254,7 +256,7 @@ export async function driverDecide(
   decision: "accept" | "reject"
 ): Promise<DecisionResult> {
   const booking = await getBookingOrThrow(bookingId);
-  const actor = await resolveBookingActor(booking, actorUid);
+  const actor = await resolveBookingActor(booking, actorUid, "decide");
 
   if (booking.data.status !== "pending") {
     throw new ApiError("booking_wrong_state", "This request has already been handled.", 409);
@@ -397,10 +399,10 @@ export async function driverDecide(
   return { status: "awaiting_payment", paymentDeadlineAt };
 }
 
-/** The driver or the trip's mate marks the passenger as picked up. */
+/** The trip's mate marks the passenger as picked up. */
 export async function markPickedUp(bookingId: string, actorUid: string): Promise<void> {
   const booking = await getBookingOrThrow(bookingId);
-  const actor = await resolveBookingActor(booking, actorUid);
+  const actor = await resolveBookingActor(booking, actorUid, "pickup");
   if (booking.data.status !== "confirmed") {
     throw new ApiError("booking_wrong_state", "Only a paid booking can be marked as picked up.", 409);
   }
@@ -435,10 +437,13 @@ export async function markPickedUp(bookingId: string, actorUid: string): Promise
   });
 }
 
-/** Driver or trip mate ends the ride: the driver's earnings become withdrawable. */
+/**
+ * The trip's mate drops the passenger off: the ride is complete and the
+ * driver's earnings for it become withdrawable.
+ */
 export async function completeBooking(bookingId: string, actorUid: string): Promise<void> {
   const booking = await getBookingOrThrow(bookingId);
-  const actor = await resolveBookingActor(booking, actorUid);
+  const actor = await resolveBookingActor(booking, actorUid, "complete");
   if (booking.data.status !== "picked_up" && booking.data.status !== "confirmed") {
     throw new ApiError("booking_wrong_state", "This booking can't be completed.", 409);
   }

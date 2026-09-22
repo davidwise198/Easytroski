@@ -26,7 +26,7 @@ import {
   subscribeDriverBookings,
   getDriverPickupLocations,
 } from "../../src/services/map";
-import { getActiveRoutes, startTrip, endTrip, confirmBooking, rejectBooking, cancelBooking, updateBookingStatus, updateDriverSeats, updateDriverLocation, getDriverDefaultRoute } from "../../src/services/transport";
+import { getActiveRoutes, startTrip, endTrip, cancelBooking, updateDriverSeats, updateDriverLocation, getDriverDefaultRoute } from "../../src/services/transport";
 import { fetchRoutePath, RoutePath } from "../../src/services/directions";
 import { haversineMeters, formatDistance, formatEta, etaFromDistance } from "../../src/utils/geo";
 import { formatPesewas } from "../../src/utils/money";
@@ -454,79 +454,40 @@ export default function DriverMapScreen() {
     }
   }, [activeTrip, user?.uid]);
 
-  const handleConfirmBooking = useCallback(
+  const handleDismissAlert = useCallback(() => {
+    setAlertBooking(null);
+    Vibration.cancel();
+  }, []);
+
+  /**
+   * The driver keeps the trip and the vehicle — including calling a ride off,
+   * which raises a refund for anyone who had already paid (the existing
+   * automatic refund path, unchanged).
+   *
+   * Accepting, rejecting, picking up and dropping off belong to the Mate and are
+   * deliberately not wired to anything here.
+   */
+  const handleCancelBooking = useCallback(
     async (bookingId: string) => {
-      if (alertBooking?.id === bookingId) {
-        setAlertBooking(null);
-        Vibration.cancel();
-      }
       const booking = bookings.find((b: any) => b.id === bookingId);
       try {
-        await confirmBooking(
+        await cancelBooking(
           bookingId,
+          "driver",
+          user?.uid,
           booking?.passengerId,
           activeTrip ? `${activeTrip.origin || "Origin"} → ${activeTrip.destination || "Destination"}` : undefined
         );
         setBookings((prev) =>
-          prev.map((b) => (b.id === bookingId ? { ...b, status: "confirmed" } : b))
-        );
-        showToast("success", "Booking accepted", "Passenger is paying now — you'll see Paid when done.");
-      } catch (error) {
-        console.error("Confirm booking error:", error);
-        showToast("error", "Failed to confirm", "Please try again.");
-      }
-    },
-    [bookings, activeTrip, alertBooking]
-  );
-
-  const handleRejectBooking = useCallback(
-    async (bookingId: string) => {
-      if (alertBooking?.id === bookingId) {
-        setAlertBooking(null);
-        Vibration.cancel();
-      }
-      const booking = bookings.find((b: any) => b.id === bookingId);
-      try {
-        // An unanswered request is a REJECTION — no money has moved, so the
-        // seats are simply released. Once the passenger has paid, the same tap
-        // becomes a driver CANCELLATION, which is what triggers a refund.
-        if (booking && booking.status === "pending" && booking.paymentStatus !== "paid") {
-          await rejectBooking(bookingId);
-        } else {
-          await cancelBooking(
-            bookingId,
-            user?.uid ?? "driver",
-            user?.uid,
-            booking?.passengerId,
-            activeTrip ? `${activeTrip.origin || "Origin"} → ${activeTrip.destination || "Destination"}` : undefined
-          );
-        }
-        setBookings((prev) =>
           prev.map((b) => (b.id === bookingId ? { ...b, status: "cancelled" } : b))
         );
-        showToast("info", "Booking rejected", "Passenger has been notified.");
+        showToast("info", "Booking cancelled", "Any payment this passenger made is being refunded.");
       } catch (error) {
-        console.error("Reject booking error:", error);
-        showToast("error", "Failed to reject", "Please try again.");
+        console.error("Cancel booking error:", error);
+        showToast("error", "Failed to cancel", "Please try again.");
       }
     },
-    [user?.uid, bookings, activeTrip, alertBooking]
-  );
-
-  const handleCompleteBooking = useCallback(
-    async (bookingId: string) => {
-      try {
-        await updateBookingStatus(bookingId, "completed");
-        setBookings((prev) =>
-          prev.map((b) => (b.id === bookingId ? { ...b, status: "completed" } : b))
-        );
-        showToast("success", "Passenger dropped off", "Booking marked as completed.");
-      } catch (error) {
-        console.error("Complete booking error:", error);
-        showToast("error", "Failed", "Please try again.");
-      }
-    },
-    []
+    [user?.uid, bookings, activeTrip]
   );
 
   const handleUpdateSeats = useCallback(
@@ -621,6 +582,12 @@ export default function DriverMapScreen() {
         showToast("error", "Navigation unavailable", "Could not open maps navigation.");
       });
   }, [nextPickup]);
+
+  // Passenger decisions belong to the Mate on this trip — there is no driver
+  // fallback. The driver keeps the vehicle, the route, going online and the trip
+  // itself, so the booking rows say who handles them instead of offering
+  // buttons that the backend would refuse.
+  const mateOnTrip = Boolean(activeTrip?.mateId && activeTrip?.mateActive !== false);
 
   const hasActiveTrip = activeTrip !== null;
   const isTripActive =
@@ -969,25 +936,13 @@ export default function DriverMapScreen() {
                         </View>
                       </View>
                       {booking.status === "pending" && (
-                        <View style={styles.bookingActionsWide}>
-                          <Pressable
-                            style={({ pressed }) => [styles.rejectBtnWide, pressed && { opacity: 0.85 }]}
-                            onPress={() => void handleRejectBooking(booking.id)}
-                          >
-                            <MaterialCommunityIcons name="close" size={18} color={COLORS.danger} />
-                            <AppText variant="caption" style={styles.rejectBtnWideText}>
-                              Reject
-                            </AppText>
-                          </Pressable>
-                          <Pressable
-                            style={({ pressed }) => [styles.confirmBtnWide, pressed && { opacity: 0.85 }]}
-                            onPress={() => void handleConfirmBooking(booking.id)}
-                          >
-                            <MaterialCommunityIcons name="check" size={18} color={COLORS.white} />
-                            <AppText variant="caption" style={styles.confirmBtnWideText}>
-                              Accept
-                            </AppText>
-                          </Pressable>
+                        <View style={styles.mateNeededRow}>
+                          <MaterialCommunityIcons name="account-tie" size={16} color={COLORS.accent} />
+                          <AppText variant="caption" style={styles.mateNeededText}>
+                            {mateOnTrip
+                              ? `${activeTrip?.mateName || "Your Mate"} handles passenger requests on this trip.`
+                              : "Assign a Mate before accepting passenger bookings."}
+                          </AppText>
                         </View>
                       )}
                       {booking.status === "awaiting_payment" && (
@@ -999,13 +954,23 @@ export default function DriverMapScreen() {
                         </View>
                       )}
                       {booking.status === "confirmed" && (
+                        <View style={styles.mateNeededRow}>
+                          <MaterialCommunityIcons name="account-tie" size={16} color={COLORS.accent} />
+                          <AppText variant="caption" style={styles.mateNeededText}>
+                            {mateOnTrip
+                              ? `${activeTrip?.mateName || "Your Mate"} picks up and drops off passengers.`
+                              : "Assign a Mate before marking passengers picked up."}
+                          </AppText>
+                        </View>
+                      )}
+                      {booking.status === "confirmed" && (
                         <Pressable
-                          style={({ pressed }) => [styles.dropoffBtnWide, pressed && { opacity: 0.85 }]}
-                          onPress={() => void handleCompleteBooking(booking.id)}
+                          style={({ pressed }) => [styles.cancelBookingBtn, pressed && { opacity: 0.85 }]}
+                          onPress={() => void handleCancelBooking(booking.id)}
                         >
-                          <MaterialCommunityIcons name="account-check" size={18} color={COLORS.white} />
-                          <AppText variant="caption" style={styles.dropoffBtnWideText}>
-                            Picked up
+                          <MaterialCommunityIcons name="close" size={16} color={COLORS.danger} />
+                          <AppText variant="caption" style={styles.cancelBookingText}>
+                            Cancel booking
                           </AppText>
                         </Pressable>
                       )}
@@ -1139,23 +1104,22 @@ export default function DriverMapScreen() {
                   </View>
                 ) : null}
               </View>
+              <View style={styles.alertMateNote}>
+                <MaterialCommunityIcons name="account-tie" size={16} color={COLORS.accent} />
+                <AppText variant="caption" style={styles.alertMateNoteText}>
+                  {mateOnTrip
+                    ? `${activeTrip?.mateName || "Your Mate"} decides this request — it is with them now.`
+                    : "Assign a Mate before accepting passenger bookings."}
+                </AppText>
+              </View>
               <View style={styles.alertActions}>
                 <Pressable
-                  style={({ pressed }) => [styles.alertRejectBtn, pressed && { opacity: 0.85 }]}
-                  onPress={() => void handleRejectBooking(alertBooking.id)}
-                >
-                  <MaterialCommunityIcons name="close" size={22} color={COLORS.danger} />
-                  <AppText variant="body" style={styles.alertRejectText}>
-                    Reject
-                  </AppText>
-                </Pressable>
-                <Pressable
                   style={({ pressed }) => [styles.alertAcceptBtn, pressed && { opacity: 0.85 }]}
-                  onPress={() => void handleConfirmBooking(alertBooking.id)}
+                  onPress={handleDismissAlert}
                 >
                   <MaterialCommunityIcons name="check" size={22} color={COLORS.white} />
                   <AppText variant="body" style={styles.alertAcceptText}>
-                    Accept
+                    Got it
                   </AppText>
                 </Pressable>
               </View>
@@ -1168,6 +1132,54 @@ export default function DriverMapScreen() {
 }
 
 const styles = StyleSheet.create({
+  // ─── Mate-only booking decisions ───
+  mateNeededRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: "rgba(245,158,11,0.10)",
+  },
+  mateNeededText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 17,
+    color: COLORS.textSecondary,
+  },
+  cancelBookingBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    marginTop: 10,
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: COLORS.danger,
+  },
+  cancelBookingText: {
+    color: COLORS.danger,
+    fontWeight: "700",
+  },
+  alertMateNote: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: "rgba(245,158,11,0.12)",
+  },
+  alertMateNoteText: {
+    flex: 1,
+    fontSize: 12,
+    lineHeight: 17,
+    color: COLORS.navy,
+  },
   container: {
     flex: 1,
   },
