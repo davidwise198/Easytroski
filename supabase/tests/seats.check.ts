@@ -40,6 +40,24 @@ let versionCounter = 0;
 let commitCount = 0;
 const networkLog: string[] = [];
 
+/**
+ * What the stubbed Paystack does with a refund request.
+ *
+ * "ok"   → a refund is created (the ordinary case).
+ * "fail" → the provider refuses, which is how `needs_attention` is reached.
+ */
+let paystackRefundMode: "ok" | "fail" = "ok";
+
+/**
+ * The JWKS the Firebase token verifier is given.
+ *
+ * Phase 5 tests go through the real HTTP entrypoint, so they present a real,
+ * RS256-signed Firebase-shaped ID token and Google's key endpoint answers with
+ * the matching public key — the same path production traffic takes, minus
+ * Google holding the private half.
+ */
+let jwksResponse: unknown = null;
+
 /** Doc paths touched in the order commits arrived — used to prove serialisation. */
 const commitOrder: string[][] = [];
 
@@ -225,12 +243,25 @@ function installStub(): void {
 
     // Paystack — canned, so a refund path can be exercised without the internet.
     if (url.startsWith("https://api.paystack.co/")) {
-      networkLog.push(`paystack:${url.replace("https://api.paystack.co/", "")}`);
+      const label = url.replace("https://api.paystack.co/", "");
+      networkLog.push(`paystack:${label}`);
+
+      if (label.startsWith("refund") && paystackRefundMode === "fail") {
+        return jsonResponse({ status: false, message: "stub refused the refund" }, 400);
+      }
+
       return jsonResponse({
         status: true,
         message: "stub",
         data: { id: 1, status: "pending", amount: 100, transaction: { reference: "stub-ref" } },
       });
+    }
+
+    // Firebase ID-token signing keys — see `jwksResponse` above.
+    if (url.startsWith("https://www.googleapis.com/service_accounts/v1/jwk/")) {
+      networkLog.push("google-jwks");
+      if (!jwksResponse) throw new Error("JWKS was requested before the test key was built");
+      return jsonResponse(jwksResponse);
     }
 
     if (url.startsWith(`${DOCS_ROOT}/`) || url.startsWith(`${DOCS_ROOT}:`)) {
@@ -875,6 +906,701 @@ async function main(): Promise<void> {
     "not_your_trip"
   );
   check("no seats were released by the refused action", Number(get(`drivers/${DRIVER}`)?.availableSeats) === CAPACITY);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  section("12. The vehicle's capacity is not the client's to choose");
+
+  const { startTripCore } = await import("../functions/_shared/tripFlow.ts");
+
+  /** The driver already has a trip; these tests need an empty road. */
+  const clearTrips = (): void => {
+    for (const path of [...store.keys()]) {
+      if (path.startsWith("trips/")) store.delete(path);
+    }
+  };
+
+  seed();
+  clearTrips();
+  const asked60 = await startTripCore({
+    driverId: DRIVER,
+    routeId: "route-1",
+    direction: "going",
+    capacity: 60,
+  });
+  check(
+    "a 12-seat vehicle asked to advertise 60 seats advertises 12",
+    asked60.availableSeats === CAPACITY,
+    JSON.stringify(asked60)
+  );
+  check("and it says so, rather than quietly pretending", asked60.capacityClamped === true);
+  check(
+    "the driver document carries the trusted number, not the requested one",
+    Number(get(`drivers/${DRIVER}`)?.availableSeats) === CAPACITY
+  );
+
+  seed();
+  clearTrips();
+  const asked13 = await startTripCore({
+    driverId: DRIVER,
+    routeId: "route-1",
+    direction: "going",
+    capacity: CAPACITY + 1,
+  });
+  check("one seat over the registered capacity is clamped too", asked13.availableSeats === CAPACITY);
+
+  seed();
+  clearTrips();
+  const askedExact = await startTripCore({
+    driverId: DRIVER,
+    routeId: "route-1",
+    direction: "going",
+    capacity: CAPACITY,
+  });
+  check(
+    "asking for exactly the registered capacity is not a clamp",
+    askedExact.availableSeats === CAPACITY && askedExact.capacityClamped === false
+  );
+
+  seed();
+  clearTrips();
+  const askedNothing = await startTripCore({
+    driverId: DRIVER,
+    routeId: "route-1",
+    direction: "going",
+    capacity: 0,
+  });
+  check("no capacity in the request falls back to the registered one", askedNothing.availableSeats === CAPACITY);
+
+  // A profile that never recorded a capacity must not become a way to sell 60.
+  seed();
+  clearTrips();
+  const withoutCapacity = { ...(get(`drivers/${DRIVER}`) as Record<string, unknown>) };
+  delete withoutCapacity.vehicleCapacity;
+  put(`drivers/${DRIVER}`, withoutCapacity);
+  const askedWithNoRegistration = await startTripCore({
+    driverId: DRIVER,
+    routeId: "route-1",
+    direction: "going",
+    capacity: 60,
+  });
+  check(
+    "a driver with no registered capacity is held to the app default",
+    askedWithNoRegistration.availableSeats === DEFAULT_VEHICLE_CAPACITY,
+    JSON.stringify(askedWithNoRegistration)
+  );
+
+  seed();
+  await expectApiError(
+    "a driver cannot offer more seats than the vehicle is registered for",
+    () => setDriverCapacityCore(DRIVER, CAPACITY + 1),
+    "invalid_request"
+  );
+  check(
+    "the refused change left the counter exactly as it was",
+    Number(get(`drivers/${DRIVER}`)?.availableSeats) === CAPACITY
+  );
+  const atCapacity = await setDriverCapacityCore(DRIVER, CAPACITY);
+  check("offering the registered capacity is allowed", atCapacity.availableSeats === CAPACITY);
+
+  // ─────────────────────────────────────────────────────────────────────────
+  section("12b. Only an administrator can correct the registered capacity");
+
+  const { setVehicleCapacityCore } = await import("../functions/_shared/admin.ts");
+  const CAPACITY_ADMIN = "admin-capacity";
+
+  /** A vehicle document as the admin dashboard keeps it, linked to the driver. */
+  const seedVehicle = (): void => {
+    put(`vehicles/veh-1`, {
+      numberPlate: "GR-1234-24",
+      color: "White",
+      brand: "Toyota",
+      capacity: CAPACITY,
+      driverId: DRIVER,
+    });
+  };
+
+  const auditEvents = (): string[] =>
+    collectionDocs("auditLogs")
+      .map((row) => String(row.event || ""))
+      .filter(Boolean);
+
+  // The admin dashboard's "Capacity (seats)" field used to write a document
+  // nobody measures against, so a correction changed nothing. It now moves the
+  // seat ceiling itself.
+  seed();
+  seedVehicle();
+  const corrected = await setVehicleCapacityCore({
+    actorId: CAPACITY_ADMIN,
+    actorTokenRole: "admin",
+    driverId: DRIVER,
+    capacity: 20,
+    vehicleId: "veh-1",
+  });
+  check("an admin can correct the seat count", corrected.changed === true && corrected.capacity === 20);
+  check(
+    "the trusted driver document now carries the corrected ceiling",
+    Number(get(`drivers/${DRIVER}`)?.vehicleCapacity) === 20
+  );
+  check(
+    "the vehicle document the dashboard shows is kept in step",
+    Number(get("vehicles/veh-1")?.capacity) === 20
+  );
+  check(
+    "the correction is recorded with the previous value",
+    auditEvents().includes("VEHICLE_CAPACITY_CHANGED")
+  );
+  check(
+    "the driver is told their vehicle count changed",
+    collectionDocs("notifications").some((row) => row.type === "vehicle_capacity_changed")
+  );
+  check(
+    "raising the ceiling does not by itself advertise more seats",
+    Number(get(`drivers/${DRIVER}`)?.availableSeats) === CAPACITY
+  );
+
+  const afterCorrection = await setDriverCapacityCore(DRIVER, 20);
+  check(
+    "the driver may now offer up to the corrected ceiling",
+    afterCorrection.availableSeats === 20,
+    JSON.stringify(afterCorrection)
+  );
+
+  // The ceiling is what a trip is measured against, so startTrip must use it.
+  clearTrips();
+  const tripAfterCorrection = await startTripCore({
+    driverId: DRIVER,
+    routeId: "route-1",
+    direction: "going",
+    capacity: 60,
+  });
+  check(
+    "a trip started afterwards is capped by the corrected ceiling, not the old one",
+    tripAfterCorrection.availableSeats === 20,
+    JSON.stringify(tripAfterCorrection)
+  );
+
+  // Nobody else, at any level of the stack.
+  seed();
+  const NOT_AN_ADMIN = "passenger-capacity";
+  put(`users/${NOT_AN_ADMIN}`, { role: "passenger", name: "A Passenger" });
+  await expectApiError(
+    "a driver cannot correct their own vehicle's registered capacity",
+    () =>
+      setVehicleCapacityCore({
+        actorId: DRIVER,
+        driverId: DRIVER,
+        capacity: 60,
+      }),
+    "not_authorised"
+  );
+  check(
+    "the driver's refused attempt changed nothing",
+    Number(get(`drivers/${DRIVER}`)?.vehicleCapacity) === CAPACITY
+  );
+  await expectApiError(
+    "a user whose document says 'mate' cannot correct it either",
+    () =>
+      setVehicleCapacityCore({
+        actorId: MATE,
+        driverId: DRIVER,
+        capacity: 60,
+      }),
+    "not_authorised"
+  );
+  await expectApiError(
+    "a passenger cannot correct a vehicle's registered capacity",
+    () =>
+      setVehicleCapacityCore({
+        actorId: NOT_AN_ADMIN,
+        driverId: DRIVER,
+        capacity: 60,
+      }),
+    "not_authorised"
+  );
+  check(
+    "every refused attempt left the ceiling exactly as it was",
+    Number(get(`drivers/${DRIVER}`)?.vehicleCapacity) === CAPACITY
+  );
+
+  // Bounds.
+  seed();
+  await expectApiError(
+    "a capacity beyond anything a tro-tro could be is refused",
+    () =>
+      setVehicleCapacityCore({
+        actorId: CAPACITY_ADMIN,
+        actorTokenRole: "admin",
+        driverId: DRIVER,
+        capacity: 600,
+      }),
+    "invalid_request"
+  );
+  await expectApiError(
+    "a capacity of zero seats is refused",
+    () =>
+      setVehicleCapacityCore({
+        actorId: CAPACITY_ADMIN,
+        actorTokenRole: "admin",
+        driverId: DRIVER,
+        capacity: 0,
+      }),
+    "invalid_request"
+  );
+  await expectApiError(
+    "a vehicle nobody drives cannot be corrected",
+    () =>
+      setVehicleCapacityCore({
+        actorId: CAPACITY_ADMIN,
+        actorTokenRole: "admin",
+        driverId: "driver-that-does-not-exist",
+        capacity: 20,
+      }),
+    "invalid_request"
+  );
+
+  // A smaller vehicle must not strand passengers who already hold seats.
+  seed();
+  seedBooking("booking-held-3", { seats: 3, status: "confirmed", paymentStatus: "paid" });
+  await expectApiError(
+    "capacity cannot drop below seats that are already booked",
+    () =>
+      setVehicleCapacityCore({
+        actorId: CAPACITY_ADMIN,
+        actorTokenRole: "admin",
+        driverId: DRIVER,
+        capacity: 2,
+      }),
+    "seats_over_capacity"
+  );
+  check(
+    "the refused reduction left the ceiling alone",
+    Number(get(`drivers/${DRIVER}`)?.vehicleCapacity) === CAPACITY
+  );
+
+  // Shrinking to exactly what is committed is allowed, and the seats on offer
+  // come down to fit (0 here: all four seats are taken).
+  const shrunk = await setVehicleCapacityCore({
+    actorId: CAPACITY_ADMIN,
+    actorTokenRole: "admin",
+    driverId: DRIVER,
+    capacity: 4,
+  });
+  check("shrinking to exactly the booked seats is allowed", shrunk.capacity === 4);
+  check(
+    "the seats on offer are brought down to fit the smaller vehicle",
+    shrunk.offered === 1 && Number(get(`drivers/${DRIVER}`)?.availableSeats) === 1,
+    JSON.stringify(shrunk)
+  );
+  check(
+    "the invariant still holds after the shrink",
+    shrunk.offered + 3 <= shrunk.capacity,
+    JSON.stringify(shrunk)
+  );
+
+  // And it can never be a lever for more seats than the vehicle holds.
+  seed();
+  seedBooking("booking-held-2", { seats: 2, status: "confirmed", paymentStatus: "paid" });
+  const capped = await setVehicleCapacityCore({
+    actorId: CAPACITY_ADMIN,
+    actorTokenRole: "admin",
+    driverId: DRIVER,
+    capacity: 6,
+  });
+  check("a corrected ceiling is respected by the driver's offer", capped.capacity === 6);
+  await expectApiError(
+    "and the driver still cannot offer past it",
+    () => setDriverCapacityCore(DRIVER, 7),
+    "invalid_request"
+  );
+  const bookingOverCeiling = await readSeatUsage(DRIVER);
+  check(
+    "the seat model reports the corrected ceiling everywhere",
+    bookingOverCeiling.capacity === 6 && bookingOverCeiling.maxOffer === 4,
+    JSON.stringify(bookingOverCeiling)
+  );
+
+  // ─────────────────────────────────────────────────────────────────────────
+  section("13. Admin authority is not something a profile can claim");
+
+  const { requireAdminUser, setUserRoleCore } = await import("../functions/_shared/admin.ts");
+  const PASSENGER = "passenger-9";
+
+  seed();
+  put(`users/${PASSENGER}`, { role: "passenger", name: "Passenger Nine" });
+  put("users/admin-1", { role: "admin", name: "Admin One" });
+
+  await expectApiError(
+    "a passenger is not an admin",
+    () => requireAdminUser(PASSENGER, undefined),
+    "not_authorised"
+  );
+  await expectApiError(
+    "a token that does not claim admin is not an admin",
+    () => requireAdminUser(PASSENGER, "passenger"),
+    "not_authorised"
+  );
+  await expectApiError(
+    "a passenger cannot promote themselves",
+    () =>
+      setUserRoleCore({
+        actorId: PASSENGER,
+        actorTokenRole: "passenger",
+        userId: PASSENGER,
+        role: "admin",
+      }),
+    "not_authorised"
+  );
+  check("...and their own role is untouched", get(`users/${PASSENGER}`)?.role === "passenger");
+  await expectApiError(
+    "a passenger cannot promote anybody else either",
+    () =>
+      setUserRoleCore({ actorId: PASSENGER, actorTokenRole: "passenger", userId: MATE, role: "admin" }),
+    "not_authorised"
+  );
+  check("...and the other account is untouched", get(`users/${MATE}`)?.role === "mate");
+  await expectApiError(
+    "an invented role is refused",
+    () => setUserRoleCore({ actorId: "admin-1", actorTokenRole: "admin", userId: MATE, role: "superuser" }),
+    "invalid_request"
+  );
+
+  const promoted = await setUserRoleCore({
+    actorId: "admin-1",
+    actorTokenRole: "admin",
+    userId: MATE,
+    role: "driver",
+  });
+  check("an admin can still change a role", promoted.changed === true && get(`users/${MATE}`)?.role === "driver");
+  const roleAudit = collectionDocs("auditLogs").find(
+    (row) => (row.meta as Record<string, unknown> | null)?.action === "set_role"
+  );
+  check(
+    "the change is recorded with who did it and what changed",
+    !!roleAudit &&
+      roleAudit.actorId === "admin-1" &&
+      (roleAudit.meta as Record<string, unknown>).from === "mate" &&
+      (roleAudit.meta as Record<string, unknown>).to === "driver",
+    JSON.stringify(roleAudit)
+  );
+  const roleNotice = collectionDocs("notifications").find((row) => row.type === "role_changed");
+  check("the person whose role changed is told", !!roleNotice && roleNotice.recipientId === MATE);
+
+  // The two legitimate ways to be an admin: a signed claim, or the profile role.
+  let claimWorks = true;
+  try {
+    await requireAdminUser(PASSENGER, "admin");
+  } catch {
+    claimWorks = false;
+  }
+  check("a verification-signed admin claim is honoured", claimWorks);
+  const byProfileRole = await setUserRoleCore({
+    actorId: "admin-1",
+    actorTokenRole: undefined,
+    userId: PASSENGER,
+    role: "mate",
+  });
+  check(
+    "an admin's profile role is enough on its own",
+    byProfileRole.changed === true && get(`users/${PASSENGER}`)?.role === "mate"
+  );
+
+  // ─────────────────────────────────────────────────────────────────────────
+  section("14. One refund attempt, however many callers");
+
+  const { raiseRefundCore } = await import("../functions/_shared/paymentFlow.ts");
+  const refundCalls = () => networkLog.filter((entry) => entry === "paystack:refund").length;
+  const paidBooking = (id: string, seats: number) => {
+    seedBooking(id, {
+      seats,
+      status: "confirmed",
+      paymentStatus: "paid",
+      paymentRef: `ET-BOOKING-${id.toUpperCase()}`,
+      walletCreditedAt: new Date().toISOString(),
+      totalPesewas: 500 * seats,
+    });
+    // The credit a refund has to take back — without it there is nothing to
+    // reverse, and the wallet half of the test would pass for the wrong reason.
+    put(`driverLedger/credit-${id}`, {
+      driverId: DRIVER,
+      bookingId: id,
+      type: "credit",
+      status: "pending",
+      netPesewas: 450 * seats,
+      createdAt: new Date().toISOString(),
+    });
+  };
+
+  // Two paths that really can collide: the passenger cancelling while the
+  // driver ends the trip.
+  seed();
+  paidBooking("refund-race", 2);
+  const [first, second] = await Promise.all([
+    raiseRefundCore({
+      bookingId: "refund-race",
+      reason: "cancelled_by_passenger",
+      actorId: "passenger-refund-race",
+      actorRole: "passenger",
+    }),
+    raiseRefundCore({
+      bookingId: "refund-race",
+      reason: "trip_ended",
+      actorId: DRIVER,
+      actorRole: "system",
+    }),
+  ]);
+  check(
+    "two simultaneous refund paths call Paystack exactly once",
+    refundCalls() === 1,
+    `calls=${refundCalls()}`
+  );
+  check(
+    "both callers are answered with a real status",
+    [first.refundStatus, second.refundStatus].every((status) => typeof status === "string" && status.length > 0),
+    JSON.stringify([first, second])
+  );
+  check(
+    "the booking ends up with one refund, not two",
+    typeof (get("bookings/refund-race")?.refund as Record<string, unknown> | null)?.status === "string"
+  );
+  const reversals = collectionDocs("driverLedger").filter((row) => row.type === "reversal");
+  check("the driver's earning is reversed once", reversals.length === 1, `reversals=${reversals.length}`);
+
+  // Repeating the request after it has settled must not talk to Paystack again.
+  const callsBeforeRepeat = refundCalls();
+  const repeated = await raiseRefundCore({ bookingId: "refund-race", reason: "trip_ended" });
+  check("a repeated request does not refund again", refundCalls() === callsBeforeRepeat);
+  check(
+    "...and reports the refund that already exists",
+    ["requesting", "pending", "processing", "processed"].includes(repeated.refundStatus),
+    repeated.refundStatus
+  );
+
+  // Somebody else's attempt, still live: left alone.
+  seed();
+  paidBooking("refund-live", 1);
+  put("bookings/refund-live", {
+    ...(get("bookings/refund-live") as Record<string, unknown>),
+    refund: { status: "requesting", amountPesewas: 500, requestedAt: new Date().toISOString() },
+  });
+  const duringLiveAttempt = await raiseRefundCore({
+    bookingId: "refund-live",
+    reason: "cancelled_by_passenger",
+  });
+  check(
+    "a refund already in flight is not duplicated",
+    refundCalls() === 0,
+    `calls=${refundCalls()}`
+  );
+  check(
+    "...and the caller is told an attempt is under way",
+    duringLiveAttempt.refundStatus === "requesting"
+  );
+
+  // A claim nobody ever answered (the function died mid-call) can be taken over.
+  seed();
+  paidBooking("refund-abandoned", 1);
+  put("bookings/refund-abandoned", {
+    ...(get("bookings/refund-abandoned") as Record<string, unknown>),
+    refund: {
+      status: "requesting",
+      amountPesewas: 500,
+      requestedAt: new Date(Date.now() - 10 * 60_000).toISOString(),
+    },
+  });
+  const tookOver = await raiseRefundCore({ bookingId: "refund-abandoned", reason: "trip_ended" });
+  check("an abandoned attempt is taken over", refundCalls() === 1, `calls=${refundCalls()}`);
+  check("...and settles into a real state", tookOver.refundStatus === "pending", tookOver.refundStatus);
+
+  // A provider that refuses leaves the money visible for a human — and the
+  // booking can still be retried afterwards.
+  seed();
+  paidBooking("refund-refused", 1);
+  paystackRefundMode = "fail";
+  const refused = await raiseRefundCore({ bookingId: "refund-refused", reason: "cancelled_by_driver" });
+  check(
+    "a refused refund is surfaced for a human rather than swallowed",
+    refused.refundStatus === "needs_attention",
+    refused.refundStatus
+  );
+  paystackRefundMode = "ok";
+  const retried = await raiseRefundCore({ bookingId: "refund-refused", reason: "cancelled_by_driver" });
+  check(
+    "a later attempt can still claim it",
+    retried.refundStatus === "pending" && refundCalls() === 2,
+    `${retried.refundStatus} calls=${refundCalls()}`
+  );
+
+  // ─────────────────────────────────────────────────────────────────────────
+  section("15. Through the real HTTP entrypoint, with a really signed token");
+
+  // The verifier fetches Google's signing keys; hand it ours so a genuine
+  // RS256 token can be verified end to end.
+  const publicJwk = (await crypto.subtle.exportKey("jwk", pair.publicKey)) as Record<string, unknown>;
+  jwksResponse = { keys: [{ ...publicJwk, kid: "phase5-test", alg: "RS256", use: "sig" }] };
+
+  const base64Url = (input: string | Uint8Array): string => {
+    const bytes = typeof input === "string" ? new TextEncoder().encode(input) : input;
+    let binary = "";
+    for (const byte of bytes) binary += String.fromCharCode(byte);
+    return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+  };
+
+  /** A Firebase-shaped ID token signed with the key the stub publishes. */
+  const firebaseToken = async (uid: string, claims: Record<string, unknown> = {}): Promise<string> => {
+    const now = Math.floor(Date.now() / 1000);
+    const header = base64Url(JSON.stringify({ alg: "RS256", kid: "phase5-test", typ: "JWT" }));
+    const payload = base64Url(
+      JSON.stringify({
+        iss: `https://securetoken.google.com/${PROJECT}`,
+        aud: PROJECT,
+        sub: uid,
+        iat: now,
+        exp: now + 3600,
+        ...claims,
+      })
+    );
+    const signingInput = `${header}.${payload}`;
+    const signature = new Uint8Array(
+      await crypto.subtle.sign(
+        "RSASSA-PKCS1-v1_5",
+        pair.privateKey,
+        new TextEncoder().encode(signingInput)
+      )
+    );
+    return `${signingInput}.${base64Url(signature)}`;
+  };
+
+  // Deno.serve is what the entrypoints register with; capture the handler
+  // instead of binding a port.
+  const realServe = Deno.serve;
+  type Handler = (request: Request) => Promise<Response>;
+  // Held in objects so the closure assignment is visible to the type checker.
+  const payments: { handler: Handler | null } = { handler: null };
+  const capture: { handler: Handler | null } = { handler: null };
+  (Deno as unknown as { serve: unknown }).serve = (handler: Handler) => {
+    payments.handler = handler;
+    return { finished: Promise.resolve(), shutdown: async () => {} } as never;
+  };
+  await import("../functions/payments/index.ts");
+  (Deno as unknown as { serve: unknown }).serve = realServe;
+  check("the payments entrypoint registered a handler", payments.handler !== null);
+
+  const callPayments = async (
+    action: string,
+    body: Record<string, unknown>,
+    uid: string,
+    claims: Record<string, unknown> = {}
+  ): Promise<{ status: number; body: Record<string, unknown> }> => {
+    const token = await firebaseToken(uid, claims);
+    const response = await payments.handler!(
+      new Request("https://example.test/payments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ action, ...body }),
+      })
+    );
+    return { status: response.status, body: (await response.json()) as Record<string, unknown> };
+  };
+
+  seed();
+  put(`users/${PASSENGER}`, { role: "passenger", name: "Passenger Nine" });
+  put("users/admin-1", { role: "admin", name: "Admin One" });
+  Deno.env.set("REAP_SECRET", "phase5-secret");
+
+  const spoof = await callPayments(
+    "adminSetRole",
+    { userId: PASSENGER, role: "admin", actorRole: "admin", callerRole: "admin", admin: true },
+    PASSENGER
+  );
+  check(
+    "a passenger claiming admin in the request body is refused",
+    spoof.status === 403,
+    JSON.stringify(spoof)
+  );
+  check("and nothing was changed", get(`users/${PASSENGER}`)?.role === "passenger");
+
+  const maintenance = await callPayments("runMaintenance", {}, PASSENGER);
+  check(
+    "a passenger cannot trigger housekeeping",
+    maintenance.status === 403,
+    JSON.stringify(maintenance)
+  );
+
+  const asAdmin = await callPayments("adminSetRole", { userId: PASSENGER, role: "mate" }, "admin-1");
+  check(
+    "an admin's action still goes through",
+    asAdmin.status === 200 && get(`users/${PASSENGER}`)?.role === "mate",
+    JSON.stringify(asAdmin)
+  );
+
+  // Capacity authority through the real entrypoint: a driver's own signed token
+  // cannot move the seat ceiling, however they dress up the request.
+  const driverSpoof = await callPayments(
+    "adminSetVehicleCapacity",
+    { driverId: DRIVER, capacity: 60, actorRole: "admin", role: "admin", admin: true },
+    DRIVER
+  );
+  check(
+    "a driver asking the API for 60 seats is refused",
+    driverSpoof.status === 403,
+    JSON.stringify(driverSpoof)
+  );
+  check(
+    "and their vehicle still seats twelve",
+    Number(get(`drivers/${DRIVER}`)?.vehicleCapacity) === 12
+  );
+
+  const passengerSpoof = await callPayments(
+    "adminSetVehicleCapacity",
+    { driverId: DRIVER, capacity: 60 },
+    PASSENGER
+  );
+  check(
+    "a passenger asking the API for 60 seats is refused",
+    passengerSpoof.status === 403,
+    JSON.stringify(passengerSpoof)
+  );
+
+  const adminCapacity = await callPayments(
+    "adminSetVehicleCapacity",
+    { driverId: DRIVER, capacity: 14 },
+    "admin-1"
+  );
+  check(
+    "an admin correcting the seat count through the API succeeds",
+    adminCapacity.status === 200 && Number(get(`drivers/${DRIVER}`)?.vehicleCapacity) === 14,
+    JSON.stringify(adminCapacity)
+  );
+
+  const byClaim = await callPayments("runMaintenance", {}, "claim-only-admin", { role: "admin" });
+  check(
+    "a verified admin claim can run housekeeping",
+    byClaim.status === 200 && byClaim.body.ok !== false,
+    JSON.stringify(byClaim)
+  );
+
+  const notSignedIn = await callPayments("runMaintenance", {}, "", {});
+  check("a token without a subject is refused", notSignedIn.status === 401, JSON.stringify(notSignedIn));
+
+  // The reaper is the schedule's endpoint, and nothing else's.
+  (Deno as unknown as { serve: unknown }).serve = (handler: Handler) => {
+    capture.handler = handler;
+    return { finished: Promise.resolve(), shutdown: async () => {} } as never;
+  };
+  await import("../functions/reap-expired/index.ts");
+  (Deno as unknown as { serve: unknown }).serve = realServe;
+  check("the reaper registered a handler", capture.handler !== null);
+
+  const reap = (headers: Record<string, string>) =>
+    capture.handler!(new Request("https://example.test/reap-expired", { method: "POST", headers }));
+
+  check("the reaper refuses a caller with no secret", (await reap({})).status === 401);
+  check(
+    "the reaper refuses a wrong secret",
+    (await reap({ "x-reap-secret": "not-the-secret" })).status === 401
+  );
+  const rightSecret = await reap({ "x-reap-secret": "phase5-secret" });
+  check("the reaper runs for the caller holding the secret", rightSecret.status === 200);
 
   // ─────────────────────────────────────────────────────────────────────────
   console.log(`\n==================================`);

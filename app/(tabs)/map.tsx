@@ -305,7 +305,7 @@ export default function PassengerMapScreen() {
               data.cancelledBy === "passenger"
                 ? "You cancelled this booking."
                 : data.cancelReason === "driver_no_response"
-                  ? "The driver didn't respond in time."
+                  ? "Nobody answered in time."
                   : "The driver could not take this booking.";
             showToast("info", msg, detail);
           } else if (data.status === "completed") {
@@ -572,14 +572,14 @@ export default function PassengerMapScreen() {
       case "driver_inactive":
         return "Your trip ended. Try booking another ride.";
       case "driver_no_response":
-        return "The driver didn't respond in time. Try another ride.";
+        return "Your booking wasn't answered in time. Try another ride.";
       case "payment_expired":
         return "Payment wasn't completed in time, so your seats were released.";
       case "cancelled_by_driver":
         return "The driver cancelled this ride. Any payment you made is being refunded.";
       case "rejected_by_driver":
       default:
-        return "Booking REJECTED by driver. Try booking another ride.";
+        return "Your booking wasn't accepted. Try booking another ride.";
     }
   };
 
@@ -829,12 +829,12 @@ export default function PassengerMapScreen() {
               {lastBookingStatus === "confirmed"
                 ? `Seat confirmed — ${bookingDoc?.seats ?? bookingSeats} seat${(bookingDoc?.seats ?? bookingSeats) > 1 ? 's' : ''} paid for.${remainingSeats !== null ? ` ${remainingSeats} seat${remainingSeats !== 1 ? 's' : ''} remaining.` : ''} Your driver is on the way.`
                 : lastBookingStatus === "awaiting_payment"
-                  ? `Driver ACCEPTED — pay ${formatPesewas(bookingDoc?.totalPesewas)} to reserve your seat${(bookingDoc?.seats ?? 1) > 1 ? 's' : ''}.`
+                  ? `Accepted — pay ${formatPesewas(bookingDoc?.totalPesewas)} to reserve your seat${(bookingDoc?.seats ?? 1) > 1 ? 's' : ''}.`
                   : lastBookingStatus === "expired"
                     ? "Payment wasn't completed in time, so your seats were released."
                     : lastBookingStatus === "cancelled"
                       ? cancelledBannerText(cancelledMeta)
-                      : "Waiting for the driver to ACCEPT or REJECT your booking…"}
+                      : "Waiting for your Mate to accept your booking…"}
             </AppText>
             {lastBookingStatus === "awaiting_payment" ? (
               <View style={styles.bannerActions}>

@@ -28,6 +28,7 @@ import {
   unassignMate,
 } from "../_shared/mates.ts";
 import { writeAudit } from "../_shared/audit.ts";
+import { isAdminUser, requireAdminUser, setUserRoleCore, setVehicleCapacityCore } from "../_shared/admin.ts";
 
 /** Let background housekeeping finish even after the response is sent. */
 function background(work: Promise<unknown>): void {
@@ -39,11 +40,8 @@ function background(work: Promise<unknown>): void {
   }
 }
 
-async function isAdmin(uid: string, tokenRole?: string): Promise<boolean> {
-  if (tokenRole === "admin") return true;
-  const profile = await getDocument(`users/${uid}`);
-  return profile?.data.role === "admin";
-}
+// Admin authority lives in _shared/admin.ts: a verified token claim, or the
+// `role` field the security rules no longer let a client write.
 
 async function userProfile(uid: string): Promise<Record<string, unknown> | null> {
   const profile = await getDocument(`users/${uid}`);
@@ -119,7 +117,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
         const booking = await getDocument(`bookings/${bookingId}`);
         if (!booking) throw new ApiError("booking_not_found", "We couldn't find that booking.", 404);
         if (booking.data.passengerId !== user.uid && booking.data.driverId !== user.uid) {
-          const admin = await isAdmin(user.uid, user.role);
+          const admin = await isAdminUser(user.uid, user.role);
           if (!admin) throw new ApiError("not_your_booking", "That booking isn't yours.", 403);
         }
         const result = await confirmChargeCore({ bookingId, source: "client_poll" });
@@ -290,15 +288,52 @@ Deno.serve(async (request: Request): Promise<Response> => {
         return json(usage);
       }
 
-      // ─── Maintenance (any signed-in user may nudge it) ───────────────────
+      // ─── Maintenance (admin only) ───────────────────────────────────────
+      //
+      // Housekeeping writes: it can end a trip, cancel held bookings and take a
+      // stale driver offline, so it is not something any signed-in account may
+      // trigger. The two legitimate triggers do not come through here — the
+      // schedule calls `reap-expired` with its secret, and the booking/payment
+      // paths run it server-side as a side effect of the work they were already
+      // doing.
       case "runMaintenance": {
+        await requireAdminUser(user.uid, user.role);
         const result = await runMaintenance();
         return json(result);
       }
 
       // ─── Admin ──────────────────────────────────────────────────────────
+      //
+      // `requireAdminUser` never looks at the request body: a caller who claims
+      // a role in the payload is still just whoever their verified token says
+      // they are.
+      case "adminSetRole": {
+        const result = await setUserRoleCore({
+          actorId: user.uid,
+          actorTokenRole: user.role,
+          userId: requireString(body.userId, "userId"),
+          role: requireString(body.role, "role"),
+        });
+        return json(result);
+      }
+
+      // Correct a vehicle's registered seat count. This is the ceiling the seat
+      // authority measures against, so it is an administrator's decision and
+      // never the driver's own — a driver who could raise it could sell more
+      // seats than the vehicle physically holds.
+      case "adminSetVehicleCapacity": {
+        const result = await setVehicleCapacityCore({
+          actorId: user.uid,
+          actorTokenRole: user.role,
+          driverId: requireString(body.driverId, "driverId"),
+          capacity: requireNumber(body.capacity, "capacity"),
+          vehicleId: body.vehicleId ? requireString(body.vehicleId, "vehicleId") : null,
+        });
+        return json(result);
+      }
+
       case "adminResolveRefund": {
-        if (!(await isAdmin(user.uid, user.role))) throw new ApiError("not_authorised", "Admins only", 403);
+        await requireAdminUser(user.uid, user.role);
         const bookingId = requireString(body.bookingId, "bookingId");
         const outcome = requireString(body.outcome, "outcome");
         const booking = await getDocument(`bookings/${bookingId}`);
@@ -337,7 +372,7 @@ Deno.serve(async (request: Request): Promise<Response> => {
       }
 
       case "adminResolvePayout": {
-        if (!(await isAdmin(user.uid, user.role))) throw new ApiError("not_authorised", "Admins only", 403);
+        await requireAdminUser(user.uid, user.role);
         const result = await resolvePayoutCore({
           payoutId: requireString(body.payoutId, "payoutId"),
           actorId: user.uid,

@@ -23,9 +23,11 @@ export type PaymentStatus =
   | "failed"
   | "expired";
 
-/** Mirrors Paystack's refund.* webhook states. */
+/** Mirrors Paystack's refund.* webhook states, plus our own claim state. */
 export type RefundStatus =
   | "none"
+  // Claimed by one caller, which is the only one allowed to call Paystack.
+  | "requesting"
   | "pending"
   | "processing"
   | "processed"

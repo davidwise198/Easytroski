@@ -491,14 +491,11 @@ export const seedInitialRoutes = async () => {
 // Housekeeping
 // ---------------------------------------------------------------------------
 
-/**
- * Run server-side housekeeping: expired seat holds, expired payment windows,
- * ghost drivers and pending earnings. Safe to call on every app open — the
- * backend guards each release so nothing can happen twice.
- */
-export const runCleanupTasks = async () => {
-  await callPaymentsApi("runMaintenance", {});
-};
+// Housekeeping used to be triggerable from here on every app open. It can end
+// trips, cancel held bookings and take a driver offline, so it is no longer a
+// client action at all: the schedule (reap-expired) runs it, the backend runs it
+// as a side effect of booking and payment calls, and an admin can run it
+// deliberately. Nothing to call from the app.
 
 /**
  * Called when the driver app comes to the foreground. If this device was gone

@@ -30,6 +30,19 @@ export function isLiveMode(): boolean {
 
 export const FIREBASE_PROJECT_ID = () => read("FIREBASE_PROJECT_ID");
 
+/**
+ * Shared secret for the scheduled reaper.
+ *
+ * This is NOT a client secret and must never reach the app: it exists so that
+ * housekeeping — which can end trips, cancel held bookings and take a driver
+ * offline — can only be triggered by the schedule that is supposed to trigger
+ * it, and not by anyone who happens to know the function's URL.
+ *
+ * It is optional on purpose: when it is not configured the reaper refuses every
+ * request (fails closed) rather than standing open.
+ */
+export const REAP_SECRET = () => Deno.env.get("REAP_SECRET") || "";
+
 /** Service-account credentials used for privileged Firestore writes. */
 /**
  * Secrets get pasted with their surrounding quotes surprisingly often — the

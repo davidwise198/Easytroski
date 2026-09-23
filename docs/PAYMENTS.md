@@ -100,6 +100,30 @@ Two passengers booking the last two seats at the same moment can never both win:
 the second transaction re-reads the fresh count and fails with `no_seats` ("This
 tro-tro is already full").
 
+### The seat ceiling
+
+`drivers/{id}.vehicleCapacity` is the **registered seat count of the vehicle**, and
+it is the ceiling everything else is measured against:
+
+```
+seats on offer  +  seats held, paid for or on board   <=   vehicleCapacity
+```
+
+- The driver sets it once, when they register their vehicle. The rules stop them
+  from changing it afterwards (`vehicleCapacity` is in the driver's untouched-fields
+  list), because a driver who could raise it could sell more seats than the van
+  holds.
+- `startTrip` no longer believes the number the app sends: it clamps to the
+  registered capacity and records a `TRIP_CAPACITY_CLAMPED` audit line when it had
+  to. A vehicle whose profile never recorded one is held to the 12-seat default.
+- A wrong capacity is corrected by an admin, through `adminSetVehicleCapacity`,
+  which refuses anything below seats that are already booked and brings the seats
+  on offer down to fit a smaller vehicle. The admin dashboard's *Capacity (seats)*
+  field calls it — it used to write a `vehicles` document that nothing measured
+  against, so a correction silently changed nothing.
+- The mate may move the seats on offer, never the ceiling, and never below what is
+  already committed.
+
 ---
 
 ## 4. Backend
@@ -117,7 +141,9 @@ Actions the app can call: `createBookingRequest`, `driverDecide`,
 `initiateCharge`, `submitChargeOtp`, `checkPayment`, `cancelBooking`,
 `markPickedUp`, `completeBooking`, `setDriverOnline`, `startTrip`, `endTrip`,
 `setDriverCapacity`, `driverResumed`, `rateDriver`, `requestPayout`,
-`runMaintenance`, `adminResolveRefund`, `adminResolvePayout`.
+`adminSetRole`, `adminSetVehicleCapacity`, `adminResolveRefund`, `adminResolvePayout`.
+`runMaintenance` still exists but is admin-only — housekeeping runs on the schedule
+and as a side effect of booking and payment calls.
 
 Notable guards:
 
@@ -251,7 +277,13 @@ PAYMENT_WINDOW_MINUTES=5
 PAYOUT_CUTOFF_HOUR=20
 MIN_PAYOUT_PESEWAS=100
 DRIVER_STALE_MINUTES=5
+REAP_SECRET=<a long random string>     # the schedule's key to reap-expired
 ```
+
+`REAP_SECRET` is not a client secret and must never be an `EXPO_PUBLIC_*` value or
+reach the app. The scheduled caller sends it as `x-reap-secret`; without it
+`reap-expired` refuses every request. Generate one with
+`openssl rand -hex 32` and set the same value in the scheduler's headers.
 
 Paste the secret values exactly as they appear in the service-account JSON — the
 backend extracts the PEM between its BEGIN/END markers and matches the email
@@ -272,7 +304,21 @@ firebase deploy --only firestore:rules,firestore:indexes
 
 Then set the Paystack webhook URL to
 `https://<project-ref>.supabase.co/functions/v1/paystack-webhook` in the Paystack
-dashboard, and schedule `reap-expired` (Supabase Cron or any scheduler) every minute.
+dashboard, and schedule `reap-expired` (Supabase Cron or any scheduler) every
+minute — **with the secret header**, e.g.
+
+```sql
+select net.http_post(
+  url := 'https://<project-ref>.supabase.co/functions/v1/reap-expired',
+  headers := jsonb_build_object('Content-Type', 'application/json',
+                                'x-reap-secret', '<the same REAP_SECRET>'),
+  body := '{}'::jsonb
+);
+```
+
+Housekeeping also runs server-side as a side effect of booking and payment
+calls, so expiries still clear while the schedule is being set up. The
+`runMaintenance` action is admin-only and is not something the app calls.
 
 ---
 
@@ -306,7 +352,9 @@ investigating a real dispute.
 `PAYMENT_INITIALIZED`, `PAYMENT_SUCCESSFUL`, `PAYMENT_FAILED`,
 `PAYMENT_VERIFICATION_FAILED`, `PAYMENT_EXPIRED`, `BOOKING_CONFIRMED`,
 `DRIVER_CANCELLED`, `REFUND_REQUESTED`, `REFUND_STATUS_CHANGED`,
-`PAYOUT_REQUESTED`, `PAYOUT_*`, `BOOKING_COMPLETED`, `ADMIN_ACTION`.
+`PAYOUT_REQUESTED`, `PAYOUT_*`, `BOOKING_COMPLETED`, `SEATS_OFFERED_SET`,
+`SEATS_RELEASED`, `TRIP_CAPACITY_CLAMPED`, `VEHICLE_CAPACITY_CHANGED`,
+`ADMIN_ACTION`.
 
 Each entry records the event, entity, actor, amount in pesewas, provider reference
 and a timestamp. No credentials are ever logged.

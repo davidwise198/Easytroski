@@ -42,9 +42,18 @@ function base64UrlToUint8(value: string): Uint8Array<ArrayBuffer> {
   return bytes;
 }
 
+/**
+ * Decode a JWT segment. Anything that is not valid base64/JSON is a bad token,
+ * not a server fault — so it answers 401 like every other rejection instead of
+ * surfacing as a 500.
+ */
 function decodeJsonSegment<T>(segment: string): T {
-  const bytes = base64UrlToUint8(segment);
-  return JSON.parse(new TextDecoder().decode(bytes)) as T;
+  try {
+    const bytes = base64UrlToUint8(segment);
+    return JSON.parse(new TextDecoder().decode(bytes)) as T;
+  } catch {
+    throw new ApiError("not_signed_in", "Malformed token", 401);
+  }
 }
 
 export type VerifiedUser = {

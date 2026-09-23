@@ -319,7 +319,7 @@ export async function driverDecide(
       recipientId: booking.data.passengerId as string,
       type: "booking_expired",
       title: "Request expired",
-      body: "The driver didn't respond in time, so your seats were released.",
+      body: "Your booking wasn't answered in time, so your seats were released.",
       bookingId,
     });
     throw new ApiError("hold_expired", "That request already expired.", 409);
@@ -370,7 +370,8 @@ export async function driverDecide(
       recipientId: booking.data.passengerId as string,
       type: "booking_rejected",
       title: "Request declined",
-      body: "Your booking request was not accepted by the driver.",
+      // The decision is the Mate's; naming the driver here was simply wrong.
+      body: "Your booking request wasn't accepted. You can book another ride.",
       bookingId,
     });
 
@@ -617,7 +618,7 @@ export async function expireStaleHolds(): Promise<ExpirySweepResult> {
       recipientId: booking.data.passengerId as string,
       type: "booking_expired",
       title: "Request expired",
-      body: "The driver didn't respond in time, so your seats were released.",
+      body: "Your booking wasn't answered in time, so your seats were released.",
       bookingId: booking.id,
     });
     result.expiredRequests += 1;

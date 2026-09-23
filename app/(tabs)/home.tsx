@@ -73,7 +73,7 @@ const ACTIVE_STATUSES: BookingStatus[] = ["pending", "awaiting_payment", "confir
 function bookingStatusLabel(status: BookingStatus): string {
   switch (status) {
     case "pending":
-      return "Waiting for the driver to accept";
+      return "Waiting for your Mate to accept";
     case "awaiting_payment":
       return "Driver accepted — payment needed";
     case "confirmed":

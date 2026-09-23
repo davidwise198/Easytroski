@@ -50,11 +50,17 @@ export type AuditEvent =
   | "SEATS_OFFERED_SET"
   // Seats coming back because a passenger got off before the final stop.
   | "SEATS_RELEASED"
+  // A trip asked to advertise more seats than the vehicle is registered for,
+  // so the trusted capacity was used instead of the number that arrived.
+  | "TRIP_CAPACITY_CLAMPED"
+  // An administrator corrected the physical seat count of a vehicle, which is
+  // the ceiling every seat calculation is measured against.
+  | "VEHICLE_CAPACITY_CHANGED"
   | "ADMIN_ACTION";
 
 export type AuditInput = {
   event: AuditEvent;
-  entityType: "booking" | "payment" | "payout" | "driver" | "refund" | "mate" | "trip";
+  entityType: "booking" | "payment" | "payout" | "driver" | "refund" | "mate" | "trip" | "user";
   entityId: string;
   actorId?: string;
   actorRole?: "passenger" | "driver" | "mate" | "admin" | "system" | "paystack";

@@ -52,7 +52,11 @@ export type PaymentsAction =
   | "assignMate"
   | "unassignMate"
   // Seats on offer (mate, or the driver of the running trip)
-  | "setSeatsOffered";
+  | "setSeatsOffered"
+  // Admin: grant or change a role. The only way "admin" is handed out.
+  | "adminSetRole"
+  // Admin: correct a vehicle's registered seat count (the seat ceiling).
+  | "adminSetVehicleCapacity";
 
 /**
  * Errors the backend raises deliberately. Each maps to plain language a
@@ -112,7 +116,7 @@ const FRIENDLY_MESSAGES: Record<PaymentsErrorCode, string> = {
   no_seats: "This tro-tro is already full. Please pick another ride.",
   driver_offline: "That driver just went offline. Please pick another ride.",
   driver_unavailable: "That driver is no longer available. Please pick another ride.",
-  hold_expired: "The driver didn't respond in time, so your seats were released.",
+  hold_expired: "Nobody answered in time, so your seats were released.",
   payment_window_closed: "Your payment window closed. Please book the seat again.",
   payment_already_paid: "This booking is already paid.",
   payment_in_progress: "We're still checking your payment. Please don't pay again yet.",
@@ -353,6 +357,36 @@ export type PayoutResult = {
 
 export function requestPayout() {
   return callPaymentsApi<PayoutResult>("requestPayout", {});
+}
+
+/**
+ * Change another account's role. Admin-only, decided server-side: the client
+ * cannot write `role` at all any more, so this is the only way to grant one.
+ */
+export function adminSetUserRoleViaApi(input: { userId: string; role: string }) {
+  return callPaymentsApi<{ userId: string; role: string; changed: boolean }>(
+    "adminSetRole",
+    input as unknown as Record<string, unknown>
+  );
+}
+
+/**
+ * Correct a vehicle's registered seat count. Admin-only, decided server-side:
+ * this is the ceiling every seat calculation is measured against, so the driver
+ * cannot change it and the dashboard cannot keep its own copy.
+ */
+export function adminSetVehicleCapacityViaApi(input: {
+  driverId: string;
+  capacity: number;
+  vehicleId?: string | null;
+}) {
+  return callPaymentsApi<{
+    driverId: string;
+    capacity: number;
+    previousCapacity: number;
+    offered: number;
+    changed: boolean;
+  }>("adminSetVehicleCapacity", input as unknown as Record<string, unknown>);
 }
 
 export function adminResolveRefundViaApi(input: {

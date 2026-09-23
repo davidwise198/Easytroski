@@ -164,7 +164,7 @@ export default function NewBookingScreen() {
             <AppText variant="heading" style={[styles.stateTitle, ds.stateTitle]}>Booking sent!</AppText>
             <AppText variant="body" style={[styles.stateText, ds.stateText]}>
               {route.origin} → {route.destination}{"\n"}
-              Waiting for the driver to accept. You'll pay once they accept.
+              Waiting for your Mate to accept. You'll pay once they accept.
             </AppText>
             <PrimaryButton
               title="Track this booking"

@@ -36,7 +36,12 @@ import AuthGate from "../src/components/AuthGate";
 import { useMemo } from "react";
 import { showToast } from "../src/utils/toast";
 import { formatPesewas } from "../src/utils/money";
-import { adminResolveRefundViaApi } from "../src/services/payments";
+import {
+  adminResolveRefundViaApi,
+  adminSetUserRoleViaApi,
+  adminSetVehicleCapacityViaApi,
+  friendlyPaymentError,
+} from "../src/services/payments";
 import { Route } from "../src/types/models";
 
 type Tab = "stats" | "drivers" | "users" | "vehicles" | "bookings" | "trips" | "routes";
@@ -299,14 +304,18 @@ export default function AdminDashboardScreen() {
 
   // ── User CRUD ──
 
+  // A role is authority, so handing one out is a server decision now: `role`
+  // can no longer be written from a client at all (before this, any signed-in
+  // user could make themselves an admin with a single write). The backend
+  // checks that the caller is really an admin before it changes anything.
   const handleChangeRole = async (userId: string, newRole: string) => {
     try {
-      await updateDoc(doc(db, "users", userId), { role: newRole });
+      await adminSetUserRoleViaApi({ userId, role: newRole });
       showToast("success", "Role updated", `User role changed to ${newRole}.`);
       setEditItem(null);
       void loadAllData();
     } catch (error) {
-      showToast("error", "Update failed", "Could not change role.");
+      showToast("error", "Role not changed", friendlyPaymentError(error));
     }
   };
 
@@ -693,6 +702,7 @@ export default function AdminDashboardScreen() {
                         <AppText variant="heading" style={[styles.listTitle, ds.listTitle]}>{vehicle.numberPlate || "—"}</AppText>
                         <AppText variant="caption" style={[styles.listSubtitle, ds.listSubtitle]}>
                           {vehicle.color || "—"} · {vehicle.capacity || "—"} seats · {vehicle.brand || "—"}
+                          {vehicle.driverId ? " · in use" : " · no driver linked"}
                         </AppText>
                       </View>
                       <View style={styles.rowActions}>
@@ -938,12 +948,44 @@ export default function AdminDashboardScreen() {
             onSave={async (fields) => {
               setEditSaving(true);
               try {
-                await updateDoc(doc(db, "vehicles", editItem.id), { ...fields, updatedAt: new Date().toISOString() });
-                showToast("success", "Vehicle updated", "Changes saved.");
+                const { capacity: nextCapacity, ...vehicleFields } = fields as Record<string, any>;
+                const linkedDriverId: string | undefined = editItem.driverId;
+                const capacityChanged =
+                  Number(nextCapacity || 0) !== Number(editItem.capacity || 0);
+
+                if (capacityChanged && linkedDriverId) {
+                  // The seat ceiling lives on the driver, not on this document,
+                  // so a correction goes through the backend: it refuses a count
+                  // below seats that are already booked, and brings the seats on
+                  // offer down to fit the smaller vehicle.
+                  await adminSetVehicleCapacityViaApi({
+                    driverId: linkedDriverId,
+                    capacity: Number(nextCapacity || 0),
+                    vehicleId: editItem.id,
+                  });
+                }
+
+                await updateDoc(doc(db, "vehicles", editItem.id), {
+                  ...vehicleFields,
+                  ...(capacityChanged && !linkedDriverId
+                    ? { capacity: Number(nextCapacity || 0) }
+                    : {}),
+                  updatedAt: new Date().toISOString(),
+                });
+
+                showToast(
+                  "success",
+                  "Vehicle updated",
+                  capacityChanged && !linkedDriverId
+                    ? "No driver is linked to this vehicle, so its seat count isn't in use yet."
+                    : capacityChanged
+                      ? "Seat count corrected for this vehicle's driver."
+                      : "Changes saved."
+                );
                 setEditItem(null);
                 void loadAllData();
-              } catch {
-                showToast("error", "Update failed", "Could not save changes.");
+              } catch (error) {
+                showToast("error", "Update failed", friendlyPaymentError(error));
               } finally {
                 setEditSaving(false);
               }
@@ -1094,6 +1136,13 @@ function VehicleEditForm({
       <GlassInput placeholder="Color" icon="palette" value={color} onChangeText={setColor} />
       <GlassInput placeholder="Brand" icon="factory" value={brand} onChangeText={setBrand} />
       <GlassInput placeholder="Capacity (seats)" icon="seat" value={capacity} onChangeText={setCapacity} keyboardType="numeric" />
+      {/* The seat ceiling lives on the driver, so this is corrected through the
+          backend rather than written straight to this document. */}
+      <AppText variant="caption" style={{ color: COLORS.textSecondary }}>
+        {vehicle.driverId
+          ? "How many passengers this vehicle seats. Correcting it also fixes the driver's registered vehicle, which is what trips are measured against."
+          : "No driver is linked to this vehicle yet, so this seat count is not in use."}
+      </AppText>
       <PrimaryButton
         title={saving ? "Saving..." : "Save changes"}
         onPress={() => onSave({ numberPlate, color, brand, capacity: parseInt(capacity) || 0 })}

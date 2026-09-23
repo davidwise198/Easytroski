@@ -694,7 +694,7 @@ export default function PayBookingScreen() {
             <View style={[styles.card, ds.card]}>
               <AppText variant="body" style={[styles.lineLabel, ds.body]}>
                 {booking?.status === "pending"
-                  ? "Waiting for the driver to accept your booking. You'll pay once they accept."
+                  ? "Waiting for your Mate to accept your booking. You'll pay once they accept."
                   : "This booking is not waiting for payment."}
               </AppText>
             </View>

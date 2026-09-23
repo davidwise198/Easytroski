@@ -24,7 +24,7 @@ import { expireStaleHolds, getActiveTripForDriver } from "./bookings.ts";
 import { cancelBookingForSystem } from "./cancelFlow.ts";
 import { makeEarningAvailable } from "./wallet.ts";
 import { clearMateOnTripEnd, ensureDriverCode } from "./mates.ts";
-import { writeSeatsOffered } from "./seats.ts";
+import { DEFAULT_VEHICLE_CAPACITY, writeSeatsOffered } from "./seats.ts";
 
 const LIVE_BOOKING_STATUSES = ["pending", "awaiting_payment", "confirmed", "picked_up"];
 
@@ -56,13 +56,22 @@ export async function setDriverOnlineCore(driverId: string, online: boolean): Pr
 /**
  * Start a trip: create the trip, go online and advertise the vehicle's seats.
  * The first route a driver ever runs becomes their locked default.
+ *
+ * The seats a trip may advertise are bounded by the vehicle's REGISTERED
+ * capacity, not by whatever number arrived from the phone. `vehicleCapacity` is
+ * declared once when the driver profile is created and is admin-only afterwards
+ * (firestore.rules), so it is the one value a driver cannot raise to sell seats
+ * their trotro does not have. A larger request is clamped rather than refused —
+ * refusing would leave a driver with a stale registration unable to start a trip
+ * at all — and the clamp is audited, with the true figure returned to the
+ * caller and mirrored back into the driver document the screens listen to.
  */
 export async function startTripCore(input: {
   driverId: string;
   routeId: string;
   direction: "going" | "returning";
   capacity: number;
-}): Promise<{ tripId: string; availableSeats: number }> {
+}): Promise<{ tripId: string; availableSeats: number; capacityClamped: boolean }> {
   const driver = await getDocument(`drivers/${input.driverId}`);
   if (!driver) throw new ApiError("driver_unavailable", "Your driver profile is missing.", 404);
 
@@ -72,11 +81,31 @@ export async function startTripCore(input: {
   }
 
   // A driver must have a Driver ID before a mate can ask to join them. Getting
-  // one can never be the reason a trip fails, so a failure here is ignored.
+  // one can never be the reason a trip fails, so a failure here is ignored —
+  // but it DOES write the driver document when the code was missing, which
+  // invalidates the version we read above. Starting a first trip with a stale
+  // compare-and-swap failed outright, so re-read for a version we know is
+  // current and take the capacity reading from that same read.
   await ensureDriverCode(input.driverId).catch(() => {});
+  const current = (await getDocument(`drivers/${input.driverId}`)) ?? driver;
 
   const tripId = newId();
-  const capacity = Math.max(1, Math.round(input.capacity || Number(driver.data.vehicleCapacity || 12)));
+  const registered = Math.round(Number(current.data.vehicleCapacity || 0));
+  const trusted = registered > 0 ? registered : DEFAULT_VEHICLE_CAPACITY;
+  const requested = Math.round(Number(input.capacity || 0));
+  const capacity = Math.max(1, Math.min(requested > 0 ? requested : trusted, trusted));
+  const capacityClamped = requested > trusted;
+
+  if (capacityClamped) {
+    await writeAudit({
+      event: "TRIP_CAPACITY_CLAMPED",
+      entityType: "trip",
+      entityId: tripId,
+      actorId: input.driverId,
+      actorRole: "driver",
+      meta: { requested, registeredCapacity: trusted, used: capacity },
+    });
+  }
 
   await commit([
     createWrite(`trips/${tripId}`, {
@@ -93,15 +122,15 @@ export async function startTripCore(input: {
         online: true,
         status: "in_progress",
         availableSeats: capacity,
-        ...(driver.data.defaultRouteId ? {} : { defaultRouteId: input.routeId }),
+        ...(current.data.defaultRouteId ? {} : { defaultRouteId: input.routeId }),
         updatedAt: nowIso(),
       },
       ["online", "status", "availableSeats", "defaultRouteId", "updatedAt"],
-      driver.updateTime
+      current.updateTime
     ),
   ]);
 
-  return { tripId, availableSeats: capacity };
+  return { tripId, availableSeats: capacity, capacityClamped };
 }
 
 /**
@@ -116,9 +145,13 @@ export async function setDriverCapacityCore(driverId: string, seats: number): Pr
   const driver = await getDocument(`drivers/${driverId}`);
   if (!driver) throw new ApiError("driver_unavailable", "Your driver profile is missing.", 404);
 
-  const capacity = Number(driver.data.vehicleCapacity || 0);
+  // Always bounded: a driver whose profile never recorded a capacity is held to
+  // the same default the app assumes, so "capacity missing" is not a way to
+  // offer sixty seats.
+  const registered = Math.round(Number(driver.data.vehicleCapacity || 0));
+  const capacity = registered > 0 ? registered : DEFAULT_VEHICLE_CAPACITY;
   const requested = Math.max(0, Math.round(seats));
-  if (capacity > 0 && requested > capacity) {
+  if (requested > capacity) {
     throw new ApiError("invalid_request", `Your vehicle seats ${capacity}.`, 400);
   }
 

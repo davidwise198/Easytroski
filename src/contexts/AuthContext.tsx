@@ -4,7 +4,6 @@ import { doc, onSnapshot } from "firebase/firestore";
 
 import { auth, db } from "../services/firebase";
 import { UserRole } from "../types/models";
-import { runCleanupTasks } from "../services/transport";
 import { syncDriverProfile } from "../services/auth";
 import { beginSession, endSession } from "../services/session";
 
@@ -53,8 +52,10 @@ export default function AuthProvider({ children }: { children: React.ReactNode }
           signOut(auth).catch(() => {});
         });
 
-        // Run cleanup once per session: cancel stale bookings, auto-offline inactive drivers
-        runCleanupTasks().catch(() => {});
+        // Housekeeping is no longer something a signed-in app can trigger: the
+        // backend runs it itself on the schedule (reap-expired) and as a side
+        // effect of booking and payment calls. Signed-in users asking for a
+        // global sweep was a write path anyone could pull.
 
         // Listen to the user's Firestore document for real-time role updates
         unsubscribeProfile = onSnapshot(

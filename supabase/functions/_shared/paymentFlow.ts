@@ -509,8 +509,101 @@ function mapRefundStatus(status: string): RefundStatus {
 const REFUND_FINISHED: string[] = ["pending", "processing", "processed"];
 
 /**
- * Refund a paid booking. Guarded so a booking can never be refunded twice:
- * once a refund is pending/processing/processed, further calls are no-ops.
+ * A refund attempt that has been claimed but not yet answered by Paystack.
+ *
+ * This state exists to serialise attempts: only the caller that manages to
+ * write it may talk to Paystack for that booking.
+ */
+const REFUND_CLAIMED = "requesting";
+
+/**
+ * How long a claim may sit unanswered before it is treated as abandoned.
+ *
+ * A function that dies between claiming and recording the outcome would
+ * otherwise block that booking's refund forever, so a stale claim is allowed to
+ * be taken over. Long enough that a slow Paystack call is never stolen from.
+ */
+const REFUND_CLAIM_STALE_MS = 2 * 60_000;
+
+type RefundRecord = {
+  status?: string;
+  amountPesewas?: number;
+  requestedAt?: string;
+  attemptId?: string;
+  [key: string]: unknown;
+};
+
+/**
+ * Claim the right to call Paystack for this booking's refund.
+ *
+ * The claim is written with a compare-and-swap on the booking document, so of
+ * two callers racing — a passenger cancelling while the driver ends the trip,
+ * say — exactly one wins and the other is told "someone is already doing it".
+ * That is the difference from reading a flag and acting on it: the check and the
+ * write are the same operation.
+ *
+ * Claiming is allowed when nothing is settled yet, and when a previous attempt
+ * failed (`needs_attention`) or was abandoned mid-flight. It is refused when
+ * the refund is already finished, or when another attempt is genuinely live.
+ */
+async function claimRefundAttempt(input: {
+  bookingId: string;
+  amountPesewas: number;
+  reason: string;
+}): Promise<{ claimed: boolean; attemptId?: string; held: RefundRecord | null }> {
+  return withRetry(async () => {
+    const fresh = await getDocument(`bookings/${input.bookingId}`);
+    if (!fresh) return { claimed: false, held: null };
+
+    const held = (fresh.data.refund as RefundRecord | null) || null;
+    const status = typeof held?.status === "string" ? held.status : null;
+
+    // Already on its way or done: nothing to claim.
+    if (status && REFUND_FINISHED.includes(status)) return { claimed: false, held };
+
+    if (status === REFUND_CLAIMED) {
+      const startedAt = toMillis(held?.requestedAt);
+      const abandoned = startedAt === null || Date.now() - startedAt > REFUND_CLAIM_STALE_MS;
+      // Somebody else is mid-attempt; leave theirs alone.
+      if (!abandoned) return { claimed: false, held };
+    }
+
+    const attemptId = newId();
+    await commit([
+      updateWrite(
+        `bookings/${input.bookingId}`,
+        {
+          refund: {
+            ...(held || {}),
+            status: REFUND_CLAIMED,
+            amountPesewas: input.amountPesewas,
+            reason: input.reason,
+            attemptId,
+            requestedAt: nowIso(),
+            resolvedAt: null,
+            resolvedBy: null,
+            resolutionNote: null,
+            failure: null,
+          },
+          updatedAt: nowIso(),
+        },
+        ["refund", "updatedAt"],
+        fresh.updateTime
+      ),
+    ]);
+
+    return { claimed: true, attemptId, held };
+  });
+}
+
+/**
+ * Refund a paid booking.
+ *
+ * Guarded twice over: a finished refund is never repeated, and an attempt in
+ * flight can only be started by the one caller that wins the claim commit — so
+ * two concurrent paths (passenger cancel and trip end, say) cannot each ask
+ * Paystack for the same money. A claim that loses waits and reports what is
+ * actually happening instead of acting again.
  */
 export async function raiseRefundCore(input: {
   bookingId: string;
@@ -533,6 +626,23 @@ export async function raiseRefundCore(input: {
   const reference = booking.data.paymentRef as string;
   const passengerId = String(booking.data.passengerId || "");
 
+  const claim = await claimRefundAttempt({
+    bookingId: booking.id,
+    amountPesewas,
+    reason: input.reason,
+  });
+
+  if (!claim.claimed) {
+    // Someone else owns this refund: an earlier attempt is still live, or it is
+    // already done. Report the true state; never call Paystack a second time.
+    const settled = await getBooking(booking.id);
+    const held = (settled?.data.refund as RefundRecord | null) || null;
+    return {
+      refundStatus: typeof held?.status === "string" ? held.status : "pending",
+      amountPesewas: Number(held?.amountPesewas || 0),
+    };
+  }
+
   let refund: RefundData | null = null;
   let failure: string | null = null;
 
@@ -553,7 +663,10 @@ export async function raiseRefundCore(input: {
   await withRetry(async () => {
     const fresh = await getDocument(`bookings/${booking.id}`);
     if (!fresh) return;
-    const current = (fresh.data.refund as { status?: string } | null)?.status;
+    const held = (fresh.data.refund as RefundRecord | null) || {};
+    const current = typeof held.status === "string" ? held.status : null;
+    // A webhook or an admin may have settled it while we were talking to
+    // Paystack — their answer is newer than ours, so leave it alone.
     if (current && REFUND_FINISHED.includes(current)) return;
 
     await commit([
@@ -561,13 +674,15 @@ export async function raiseRefundCore(input: {
         `bookings/${booking.id}`,
         {
           refund: {
+            ...held,
             status,
             amountPesewas,
             reason: input.reason,
             providerRefundId: refund?.id ?? null,
             customerNote: "EasyTroski booking refund",
             merchantNote: `Refund for ${reference} (${input.reason})`,
-            requestedAt: nowIso(),
+            // The claim already stamped when this attempt began; keep it.
+            requestedAt: held.requestedAt ?? nowIso(),
             resolvedAt: null,
             resolvedBy: null,
             failure: failure,
@@ -588,7 +703,12 @@ export async function raiseRefundCore(input: {
     actorRole: input.actorRole ?? "system",
     amountPesewas,
     providerRef: reference,
-    meta: { status, reason: input.reason, providerRefundId: refund?.id ?? null },
+    meta: {
+      status,
+      reason: input.reason,
+      providerRefundId: refund?.id ?? null,
+      attemptId: claim.attemptId ?? null,
+    },
   });
 
   // The driver must not keep money for a ride that was refunded.

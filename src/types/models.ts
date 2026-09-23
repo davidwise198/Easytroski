@@ -46,9 +46,14 @@ export type PaymentStatus =
   | "failed"
   | "expired";
 
-/** Paystack refund states, mapped 1:1 to its refund.* webhook events. */
+/**
+ * Paystack refund states, mapped 1:1 to its refund.* webhook events — plus
+ * `requesting`, which is the backend's own claim: one caller has taken
+ * responsibility for this refund and is talking to Paystack right now.
+ */
 export type RefundStatus =
   | "none"
+  | "requesting"
   | "pending"
   | "processing"
   | "processed"

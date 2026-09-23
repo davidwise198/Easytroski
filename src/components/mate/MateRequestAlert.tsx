@@ -29,6 +29,21 @@ function placeLabel(location?: { address?: string }): string {
 }
 
 /**
+ * Can the Mate still do something about this request?
+ *
+ * Pending is not enough on its own: once the passenger's hold has run out the
+ * request is history waiting for the reaper, and interrupting the Mate over it
+ * would be noise. This is also what decides whether a request found on opening
+ * the app is worth a pop-up.
+ */
+function stillAnswerable(booking: Booking): boolean {
+  if (booking.status !== "pending") return false;
+  const expiry = booking.seatHoldExpiresAt ? Date.parse(String(booking.seatHoldExpiresAt)) : NaN;
+  if (Number.isNaN(expiry)) return true; // unknown → let the backend refuse it
+  return expiry > Date.now();
+}
+
+/**
  * The Mate's new-request alert.
  *
  * The Mate is now the only person who can answer a booking request, so the
@@ -66,11 +81,23 @@ export default function MateRequestAlert() {
     };
   }, [user?.uid, userRole]);
 
-  // Seed on the first payload: whatever is already waiting belongs to the
-  // Passengers list, not to a pop-up the Mate has just been interrupted by.
+  /**
+   * Seed on the first payload.
+   *
+   * A request the Mate can still answer is exactly what this alert exists for,
+   * so one that is found when the app opens — the phone was in a pocket, the app
+   * was closed — is NOT written off as history while its hold is still running.
+   * Anything already answered, or whose hold has lapsed, is: that belongs to the
+   * Passengers list rather than to a pop-up.
+   *
+   * (Without push notifications installed, this is the path that catches a
+   * request that arrived while the app was not in front of them.)
+   */
   useEffect(() => {
     if (seen.current !== null) return;
-    seen.current = new Set(bookings.map((booking) => booking.id));
+    seen.current = new Set(
+      bookings.filter((booking) => !stillAnswerable(booking)).map((booking) => booking.id)
+    );
   }, [bookings]);
 
   // A request that arrives while the Mate is working the trip.
@@ -78,7 +105,7 @@ export default function MateRequestAlert() {
     const known = seen.current;
     if (!known || !trip) return;
     const fresh = bookings.filter(
-      (booking) => booking.status === "pending" && !known.has(booking.id)
+      (booking) => stillAnswerable(booking) && !known.has(booking.id)
     );
     if (fresh.length === 0) return;
     fresh.forEach((booking) => known.add(booking.id));

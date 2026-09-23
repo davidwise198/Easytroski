@@ -138,6 +138,64 @@ Guards that deliberately say no:
   seat tests exposed. See *Seats* below. Still open: attribution wording in the
   driver's booking history list, and a security review on a real device to
   confirm the shipped rules match intent.
+- **Phase 5 — authority closure (done):** the audit's Critical finding fixed —
+  `role` is no longer something a client can write, so authority can no longer
+  be minted from a phone — plus the vehicle's capacity made backend-authoritative,
+  live bookings protected from client deletion, refunds claimed by exactly one
+  caller, housekeeping taken away from ordinary users, and the Mate-only
+  passenger wording. See *Authority (Phase 5)* below.
+
+## Authority (Phase 5)
+
+The system audit found that any signed-in account could write
+`role: "admin"` onto its own `users/{uid}` document and inherit every rule and
+backend action that trusts that field. Each fix below is covered by
+`supabase/tests/rules.check.cjs` (rules, through the official Rules API) and
+`supabase/tests/seats.check.ts` (backend, through the real entrypoint).
+
+| What | Before | Now |
+| --- | --- | --- |
+| `users/{uid}.role` | any owner could write any value | self-serve roles only (`passenger`, `driver`, `mate`); `admin` is granted out-of-band or by the backend |
+| Who may change a role | the client (`updateDoc`) | the backend only, via the admin-only `adminSetRole` action |
+| `drivers/{id}.vehicleCapacity` | owner-writable | declared once at registration, admin-only afterwards |
+| `startTrip` capacity | taken from the request body | clamped to the registered capacity, audited, true value returned |
+| Booking deletion | any booking, by its passenger | finished bookings only (`completed` / `cancelled` / `expired`) |
+| Refunding | check → call Paystack → write | claim (compare-and-swap) → only the claimant calls Paystack |
+| `reap-expired` | public | shared secret in `x-reap-secret` (fails closed if unset) |
+| `runMaintenance` action | any signed-in user | admin only; the backend still runs it as a side effect of real work |
+
+**Being an admin** has exactly two sources, both server-side: a custom claim on
+the verified ID token, or `role: "admin"` on the profile document — which only
+the Firebase console, the Admin SDK, or `setUserRoleCore` can now set. The first
+admin is still created the same way it always was: set the role in the Firebase
+console (or `firebase auth:import`/Admin SDK for a claim). After that, the
+People tab of the admin screen hands roles out through the backend, and every
+change is audited as `ADMIN_ACTION` (`set_role`, with `from` and `to`) and
+notified to the person it happened to.
+
+**Capacity** is the registered `vehicleCapacity` on the driver document. A trip
+cannot advertise more than that, `setSeatsOffered`/`setDriverCapacity` cannot
+offer more than that, and a driver whose profile never recorded one is held to
+the app's default (12) rather than to whatever arrived in the request.
+
+**Refunds** are claimed before Paystack is called: the claim is a compare-and-
+swap on `bookings/{id}.refund`, so of two callers racing — a passenger
+cancelling while the driver ends the trip, say — exactly one becomes the caller
+and the other reports what is already happening. A claim left unanswered for two
+minutes (the function died mid-call) can be taken over, and a failed attempt
+still lands in `needs_attention` for a human.
+
+**Housekeeping** is no longer something an app can trigger. It runs from the
+schedule (`reap-expired`, with its secret), as a side effect of booking and
+payment calls, and deliberately by an admin. The app's "clean up on open" call
+was removed with it.
+
+**Mate notification** delivery is unchanged and its limit is now written down:
+`expo-notifications` is not a dependency, so there is no OS push — a push would
+need a native build (not an OTA update) plus a permission flow and token
+registration. What the app does instead: the in-app alert now treats a request
+it finds on opening as answerable while its hold is still running, so a request
+that arrived while the phone was in a pocket still interrupts the Mate.
 
 ## Seats (Phase 4)
 
