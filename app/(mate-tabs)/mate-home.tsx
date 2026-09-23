@@ -8,6 +8,7 @@ import AppText from "../../src/components/ui/AppText";
 import AuthGate from "../../src/components/AuthGate";
 import EmptyState from "../../src/components/ui/EmptyState";
 import PrimaryButton from "../../src/components/ui/PrimaryButton";
+import SeatOfferControl from "../../src/components/mate/SeatOfferControl";
 import StatCard from "../../src/components/ui/StatCard";
 import { useAuth } from "../../src/contexts/AuthContext";
 import { useThemeColors } from "../../src/contexts/ThemeContext";
@@ -20,6 +21,7 @@ import {
   subscribeMateBookings,
   subscribeMateConnections,
   subscribeMateJoinRequests,
+  type SeatUsage,
 } from "../../src/services/mates";
 import { COLORS, SPACING } from "../../src/theme";
 import type { Booking, Driver, MateConnection, MateJoinRequest, Route, Trip } from "../../src/types/models";
@@ -83,6 +85,9 @@ export default function MateHomeScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reloadKey, setReloadKey] = useState(0);
+  // Authoritative seat numbers straight from the backend, used for the moment
+  // after a change until the driver document catches up in the listener.
+  const [usage, setUsage] = useState<SeatUsage | null>(null);
 
   // Name for the greeting, plus the Mate ID (created on first use if needed).
   useEffect(() => {
@@ -177,6 +182,13 @@ export default function MateHomeScreen() {
   const available = Number(driver?.availableSeats || 0);
   const confirmedSeats = seatsFor(ABOARD_STATUSES);
   const heldSeats = seatsFor(HELD_STATUSES);
+  const onBoardSeats = seatsFor(["picked_up"]);
+  // Every seat a passenger is holding: unpaid requests included, because a held
+  // seat cannot be sold again either. Same rule the backend applies.
+  const committedSeats = confirmedSeats + heldSeats;
+  const maxOffer = Math.max(0, capacity - committedSeats);
+  // The backend's own numbers win when we have them (just after a seat change).
+  const offeredSeats = usage ? usage.offered : available;
   const requestCount = tripBookings.filter((b) => b.status === "pending").length;
   const passengerCount = tripBookings.filter((b) => ABOARD_STATUSES.includes(String(b.status))).length;
 
@@ -282,17 +294,25 @@ export default function MateHomeScreen() {
                 <StatCard
                   icon="account-check"
                   value={confirmedSeats}
-                  label="Confirmed"
+                  label="Paid"
                   delay={160}
                   color={COLORS.success}
                 />
-                <StatCard icon="seat" value={available} label="Available" delay={240} />
+                <StatCard icon="seat" value={offeredSeats} label="On offer" delay={240} />
               </View>
-              {heldSeats > 0 ? (
-                <AppText variant="caption" style={[styles.seatNote, ds.secondary]}>
-                  {heldSeats} seat{heldSeats > 1 ? "s" : ""} held for requests not paid yet.
-                </AppText>
-              ) : null}
+              <AppText variant="caption" style={[styles.seatNote, ds.secondary]}>
+                {[`${onBoardSeats} on board`, heldSeats > 0 ? `${heldSeats} held for unpaid requests` : ""]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </AppText>
+
+              <SeatOfferControl
+                offered={offeredSeats}
+                capacity={capacity}
+                committed={committedSeats}
+                maxOffer={maxOffer}
+                onUsage={setUsage}
+              />
 
               {/* ─── What needs attention ─── */}
               <AppText variant="caption" style={[styles.sectionLabel, ds.secondary]}>

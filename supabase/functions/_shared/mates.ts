@@ -32,6 +32,8 @@ import {
 import { ApiError } from "./errors.ts";
 import { notify, writeAudit } from "./audit.ts";
 import { codeField, codeKind, generateCode, normaliseCode, type IdKind } from "./ids.ts";
+import { LIVE_TRIP_STATUSES } from "./state.ts";
+import { writeSeatsOffered, type SeatUsage } from "./seats.ts";
 
 /** A mate may keep this many requests outstanding at once. */
 export const MAX_PENDING_MATE_REQUESTS = 3;
@@ -39,8 +41,9 @@ export const MAX_PENDING_MATE_REQUESTS = 3;
 /** …and may ask the same driver at most this often in 24 hours. */
 export const MAX_REQUESTS_PER_PAIR_PER_DAY = 5;
 
-/** Trip states in which a mate counts as "working now". */
-export const LIVE_TRIP_STATUSES = ["online", "scheduled", "boarding", "in_progress"];
+// LIVE_TRIP_STATUSES now lives in state.ts: the seat authority, the trip
+// authority and the booking flow all ask "is this trip live?", and a second
+// definition here is how a seat ends up counted against a finished trip.
 
 /** Bookings that mean a trip still has passengers to look after. */
 const PASSENGER_STATUSES = ["pending", "awaiting_payment", "confirmed", "picked_up"];
@@ -768,8 +771,12 @@ export async function unassignMate(driverId: string, tripId: string) {
  * the trip keeps their identity for the record.
  */
 export async function clearMateOnTripEnd(trip: FsDoc): Promise<void> {
-  const mateId = trip.data.mateId;
-  if (!mateId) return;
+  // The caller's copy of the trip is usually stale by now — ending a trip
+  // writes its status first. A compare-and-swap against that old version can
+  // only fail, and silently, so re-read for a version we know is current.
+  const fresh = await getDocument(`trips/${trip.id}`);
+  const mateId = fresh?.data.mateId ?? trip.data.mateId;
+  if (!fresh || !mateId || fresh.data.mateActive === false) return;
 
   try {
     await commit([
@@ -777,7 +784,7 @@ export async function clearMateOnTripEnd(trip: FsDoc): Promise<void> {
         `trips/${trip.id}`,
         { mateActive: false, mateUnassignedAt: nowIso(), updatedAt: nowIso() },
         ["mateActive", "mateUnassignedAt", "updatedAt"],
-        trip.updateTime
+        fresh.updateTime
       ),
     ]);
   } catch {
@@ -799,6 +806,62 @@ export async function clearMateOnTripEnd(trip: FsDoc): Promise<void> {
     type: "mate_unassigned",
     title: "Trip completed",
     body: "Your trip has ended. You're free to work with another driver.",
+  });
+}
+
+// ─── Seats on offer ───────────────────────────────────────────────────────
+
+/** The live trip this driver is running, if any. */
+async function getLiveTripForDriver(driverId: string): Promise<FsDoc | null> {
+  const trips = await queryDocuments({
+    collection: "trips",
+    filters: [{ field: "driverId", value: driverId }],
+    limit: 10,
+  });
+  return trips.find((trip) => LIVE_TRIP_STATUSES.includes(String(trip.data.status))) ?? null;
+}
+
+/**
+ * Change how many seats the vehicle is offering, on its running trip.
+ *
+ * Two people may do this, and the request never says which one it is — it is
+ * resolved from the live trip:
+ *   · the mate working the trip (the ordinary case all day)
+ *   · the driver who owns it, so a vehicle with no mate can still stop selling
+ *     seats once it is full
+ *
+ * This is deliberately **not** a booking decision, so the driver is allowed
+ * here; the mate-only rule covers accepting, rejecting, pickup and drop-off.
+ * Every change is attributed to whoever made it, and the seat authority refuses
+ * anything that would leave the vehicle offering more seats than it can carry
+ * or than are actually free.
+ */
+export async function setSeatsOfferedCore(actorUid: string, seats: number): Promise<SeatUsage> {
+  const ownTrip = await getLiveTripForDriver(actorUid);
+  if (ownTrip) {
+    return writeSeatsOffered(actorUid, seats, {
+      actorId: actorUid,
+      actorRole: "driver",
+      driverId: actorUid,
+      tripId: ownTrip.id,
+    });
+  }
+
+  const trip = await getTripAssignedToMate(actorUid);
+  if (!trip) {
+    throw new ApiError("not_your_trip", "You're not on a trip right now.", 403);
+  }
+
+  const driverId = String(trip.data.driverId || "");
+  if (!driverId) throw new ApiError("driver_unavailable", "That trip has no driver.", 409);
+
+  return writeSeatsOffered(driverId, seats, {
+    actorId: actorUid,
+    actorRole: "mate",
+    driverId,
+    tripId: trip.id,
+    mateCode: typeof trip.data.mateCode === "string" ? trip.data.mateCode : null,
+    mateName: typeof trip.data.mateName === "string" ? trip.data.mateName : null,
   });
 }
 

@@ -31,6 +31,7 @@ import { fetchRoutePath, RoutePath } from "../../src/services/directions";
 import { haversineMeters, formatDistance, formatEta, etaFromDistance } from "../../src/utils/geo";
 import { formatPesewas } from "../../src/utils/money";
 import { subscribeDriver } from "../../src/services/mates";
+import { friendlyPaymentError } from "../../src/services/payments";
 import { COLORS, SPACING } from "../../src/theme";
 import { useThemeColors } from "../../src/contexts/ThemeContext";
 import { useMemo } from "react";
@@ -499,20 +500,33 @@ export default function DriverMapScreen() {
     return subscribeDriver(uid, setVehicle, () => {});
   }, [user?.uid]);
 
+  // Seats on offer are the backend's number, and they move on their own now: a
+  // passenger being dropped off puts their seats back for whoever is waiting
+  // further along the route. Follow the document so the driver sees that happen.
+  useEffect(() => {
+    if (vehicle && typeof vehicle.availableSeats === "number") {
+      setSeatCount(vehicle.availableSeats);
+    }
+  }, [vehicle?.availableSeats]);
+
   const handleUpdateSeats = useCallback(
     async (newCount: number) => {
       const driverId = user?.uid;
       if (!driverId) return;
-      const clamped = Math.max(0, Math.min(30, newCount));
+      const ceiling = Number(vehicle?.vehicleCapacity || 30);
+      const clamped = Math.max(0, Math.min(ceiling, newCount));
       setSeatCount(clamped);
       try {
         await updateDriverSeats(driverId, clamped);
-        showToast("success", "Seats updated", `${clamped} seats available.`);
-      } catch {
-        showToast("error", "Failed", "Could not update seat count.");
+        showToast("success", "Seats updated", `${clamped} seat${clamped === 1 ? "" : "s"} on offer.`);
+      } catch (error) {
+        // The backend refuses to offer a seat that is already taken, so put the
+        // count back to what it actually is rather than showing a wrong number.
+        setSeatCount(Number(vehicle?.availableSeats || 0));
+        showToast("error", "Couldn't change seats", friendlyPaymentError(error));
       }
     },
-    [user?.uid]
+    [user?.uid, vehicle?.vehicleCapacity, vehicle?.availableSeats]
   );
 
 

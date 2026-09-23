@@ -24,6 +24,7 @@ import {
   leaveDriver,
   removeMate,
   requestJoin,
+  setSeatsOfferedCore,
   unassignMate,
 } from "../_shared/mates.ts";
 import { writeAudit } from "../_shared/audit.ts";
@@ -281,6 +282,12 @@ Deno.serve(async (request: Request): Promise<Response> => {
 
       case "unassignMate": {
         return json(await unassignMate(user.uid, requireString(body.tripId, "tripId")));
+      }
+
+      // ─── Seats on offer (mate, or the driver of the running trip) ───────
+      case "setSeatsOffered": {
+        const usage = await setSeatsOfferedCore(user.uid, requireNumber(body.seats, "seats"));
+        return json(usage);
       }
 
       // ─── Maintenance (any signed-in user may nudge it) ───────────────────

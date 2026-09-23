@@ -44,6 +44,17 @@ export const PAID_STATUSES: BookingStatus[] = ["confirmed", "picked_up", "comple
 /** Bookings a passenger may have open at once without paying (anti seat-griefing). */
 export const MAX_OPEN_UNPAID_BOOKINGS = 1;
 
+/**
+ * Trip states in which the vehicle is working. Shared so the seat authority, the
+ * trip authority and the booking flow can never disagree about whether a trip
+ * is live — a disagreement there is how a seat gets double-counted.
+ */
+export const LIVE_TRIP_STATUSES = ["online", "boarding", "in_progress", "scheduled"];
+
+export function isLiveTrip(status: unknown): boolean {
+  return typeof status === "string" && LIVE_TRIP_STATUSES.includes(status);
+}
+
 export function isHoldingSeats(status: unknown): boolean {
   return typeof status === "string" && HOLDING_STATUSES.includes(status as BookingStatus);
 }

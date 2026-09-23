@@ -165,6 +165,7 @@ export default function DriverDashboardScreen() {
   const [ending, setEnding] = useState(false);
   const [profile, setProfile] = useState<Record<string, any> | null>(null);
   const [seatCount, setSeatCount] = useState(12);
+  const [vehicleCapacity, setVehicleCapacity] = useState(12);
   const [wallet, setWallet] = useState(EMPTY_WALLET);
   const [payoutBusy, setPayoutBusy] = useState(false);
   const [driverCode, setDriverCode] = useState<string | null>(null);
@@ -182,6 +183,10 @@ export default function DriverDashboardScreen() {
 
   // Wallet balances live on the driver document and are backend-owned, so we
   // simply mirror them — the app can never credit itself.
+  //
+  // Seats on offer live on the same document, and they move without the driver
+  // touching anything: dropping a passenger off puts their seats back for the
+  // next one. Mirroring keeps that visible here.
   useEffect(() => {
     const driverId = user?.uid;
     if (!driverId) return;
@@ -190,6 +195,10 @@ export default function DriverDashboardScreen() {
       (snap) => {
         const data = snap.data();
         if (!data) return;
+        if (typeof data.availableSeats === "number") setSeatCount(data.availableSeats);
+        if (typeof data.vehicleCapacity === "number" && data.vehicleCapacity > 0) {
+          setVehicleCapacity(data.vehicleCapacity);
+        }
         setWallet({
           withdrawablePesewas: Number(data.walletBalancePesewas || 0),
           pendingPesewas: Number(data.pendingEarningsPesewas || 0),
@@ -492,12 +501,15 @@ export default function DriverDashboardScreen() {
   const handleUpdateSeats = async (newCount: number) => {
     const driverId = user?.uid;
     if (!driverId) return;
-    const clamped = Math.max(0, Math.min(30, newCount));
+    const clamped = Math.max(0, Math.min(vehicleCapacity, newCount));
     setSeatCount(clamped);
     try {
       await updateDriverSeats(driverId, clamped);
-    } catch {
-      showToast("error", "Failed", "Could not update seat count.");
+    } catch (error) {
+      // A seat already taken cannot be offered again, so the backend refuses.
+      // Put the number back rather than leaving a wrong one on screen.
+      setSeatCount(seatCount);
+      showToast("error", "Couldn't change seats", friendlyPaymentError(error));
     }
   };
 

@@ -9,11 +9,14 @@
 declare namespace Deno {
   const env: {
     get(key: string): string | undefined;
+    set(key: string, value: string): void;
   };
 
   function serve(
     handler: (request: Request) => Response | Promise<Response>
   ): void;
+
+  function exit(code?: number): never;
 }
 
 declare var EdgeRuntime:

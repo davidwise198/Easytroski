@@ -137,6 +137,7 @@ export default function MatePassengersScreen() {
   const available = Number(driver?.availableSeats || 0);
   const confirmedSeats = seatsFor(tripBookings.filter((b) => ABOARD_STATUSES.includes(String(b.status))));
   const heldSeats = seatsFor(tripBookings.filter((b) => HELD_STATUSES.includes(String(b.status))));
+  const onBoardSeats = seatsFor(tripBookings.filter((b) => String(b.status) === "picked_up"));
 
   /**
    * Every action goes to the backend, which re-checks that this mate is really
@@ -319,14 +320,15 @@ export default function MatePassengersScreen() {
             <>
               <View style={styles.statRow}>
                 <StatCard icon="bell-ring-outline" value={requests.length} label="Requests" delay={80} color={COLORS.accent} />
-                <StatCard icon="account-group" value={onboard.length + confirmed.length} label="On board" delay={160} />
-                <StatCard icon="seat" value={available} label="Seats free" delay={240} color={COLORS.success} />
+                <StatCard icon="account-check" value={confirmedSeats} label="Paid" delay={160} color={COLORS.success} />
+                <StatCard icon="seat" value={available} label="On offer" delay={240} />
               </View>
-              {heldSeats > 0 ? (
-                <AppText variant="caption" style={[styles.note, ds.secondary]}>
-                  {heldSeats} of {capacity || "—"} seats held for bookings not paid yet.
-                </AppText>
-              ) : null}
+              <AppText variant="caption" style={[styles.note, ds.secondary]}>
+                {[`${onBoardSeats} on board of ${capacity}`,
+                  heldSeats > 0 ? `${heldSeats} held for unpaid requests` : ""]
+                  .filter(Boolean)
+                  .join(" · ")}
+              </AppText>
 
               {nothingOnBoard ? (
                 <EmptyState

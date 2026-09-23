@@ -45,6 +45,11 @@ export type AuditEvent =
   | "MATE_REMOVED"
   | "MATE_LEFT"
   | "MATE_SEATS_CHANGED"
+  // "MATE_SEATS_CHANGED" is the historical name; seat-offer changes are now
+  // written as SEATS_OFFERED_SET with `actorRole` saying who did it.
+  | "SEATS_OFFERED_SET"
+  // Seats coming back because a passenger got off before the final stop.
+  | "SEATS_RELEASED"
   | "ADMIN_ACTION";
 
 export type AuditInput = {

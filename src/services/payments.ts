@@ -50,7 +50,9 @@ export type PaymentsAction =
   | "mateLeaveDriver"
   | "driverRemoveMate"
   | "assignMate"
-  | "unassignMate";
+  | "unassignMate"
+  // Seats on offer (mate, or the driver of the running trip)
+  | "setSeatsOffered";
 
 /**
  * Errors the backend raises deliberately. Each maps to plain language a
@@ -100,6 +102,7 @@ export type PaymentsErrorCode =
   | "mate_assigned_to_trip"
   | "trip_not_running"
   | "trip_has_passengers"
+  | "seats_over_capacity"
   | "unknown";
 
 const FRIENDLY_MESSAGES: Record<PaymentsErrorCode, string> = {
@@ -149,6 +152,7 @@ const FRIENDLY_MESSAGES: Record<PaymentsErrorCode, string> = {
     "There's still a trip running. Finish it before this mate is removed or leaves.",
   trip_not_running: "Start the trip before doing that.",
   trip_has_passengers: "There are still passengers on this trip. Finish them first.",
+  seats_over_capacity: "You can't offer more seats than the vehicle holds.",
   unknown: "We couldn't complete that. Please try again.",
 };
 

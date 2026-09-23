@@ -70,6 +70,10 @@ export function mateActionError(error: unknown): string {
         return "This request has already been handled.";
       case "hold_expired":
         return "This request expired, so the seats were released.";
+      case "seats_over_capacity":
+        return error.message || "You can't offer more seats than the vehicle holds.";
+      case "trip_has_passengers":
+        return "Passengers are still on this trip. Finish with them first.";
       default:
         return friendlyPaymentError(error);
     }
@@ -128,6 +132,36 @@ export function unassignMateFromTrip(tripId: string) {
   return callPaymentsApi<{ tripId: string; mateId: string; status: string }>("unassignMate", {
     tripId,
   });
+}
+
+/**
+ * The seat picture, as the backend counts it.
+ *
+ * `offered` is the counter new bookings draw from; `committed` is every seat a
+ * held, paid or on-board passenger is using. The invariant the backend keeps is
+ * `offered + committed <= capacity` — the app never computes or trusts its own.
+ */
+export type SeatUsage = {
+  capacity: number;
+  offered: number;
+  committed: number;
+  onBoard: number;
+  paid: number;
+  waiting: number;
+  /** The most this vehicle could still offer (capacity - committed). */
+  maxOffer: number;
+};
+
+/**
+ * Change how many seats the vehicle is offering on the running trip.
+ *
+ * The backend decides who is allowed (the mate working the trip, or its
+ * driver) and refuses anything above what is actually free. The returned usage
+ * is the authoritative picture after the change, so the screen never has to
+ * guess.
+ */
+export function setSeatsOffered(seats: number) {
+  return callPaymentsApi<SeatUsage>("setSeatsOffered", { seats });
 }
 
 // ─── Reads (live) ─────────────────────────────────────────────────────────

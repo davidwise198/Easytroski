@@ -24,7 +24,8 @@ import { HOLD_MINUTES, PAYMENT_WINDOW_MINUTES, DRIVER_STALE_MINUTES } from "./en
 import { computeTotal } from "./money.ts";
 import { ApiError } from "./errors.ts";
 import { notify, writeAudit } from "./audit.ts";
-import { HOLDING_STATUSES, MAX_OPEN_UNPAID_BOOKINGS } from "./state.ts";
+import { HOLDING_STATUSES, LIVE_TRIP_STATUSES, MAX_OPEN_UNPAID_BOOKINGS } from "./state.ts";
+import { auditSeatsReleased, readSeatUsage } from "./seats.ts";
 import { makeEarningAvailable } from "./wallet.ts";
 import { actorMeta, resolveBookingActor } from "./mates.ts";
 
@@ -50,8 +51,6 @@ function isFresh(value: unknown, minutes: number): boolean {
   return Date.now() - millis < minutes * 60_000;
 }
 
-const ACTIVE_TRIP_STATUSES = ["online", "boarding", "in_progress", "scheduled"];
-
 /** The driver's running trip, if any (used to stamp bookings). */
 export async function getActiveTripForDriver(driverId: string): Promise<FsDoc | null> {
   const trips = await queryDocuments({
@@ -59,7 +58,7 @@ export async function getActiveTripForDriver(driverId: string): Promise<FsDoc | 
     filters: [{ field: "driverId", value: driverId }],
     limit: 10,
   });
-  return trips.find((trip) => ACTIVE_TRIP_STATUSES.includes(String(trip.data.status))) ?? null;
+  return trips.find((trip) => LIVE_TRIP_STATUSES.includes(String(trip.data.status))) ?? null;
 }
 
 async function countOpenUnpaidBookings(passengerId: string): Promise<number> {
@@ -213,11 +212,21 @@ export async function createBookingRequest(input: CreateBookingInput): Promise<{
 }
 
 /**
- * Return held seats to the driver. Both the booking flag and the seat count
- * move in one commit, so a retry, a webhook and the reaper can all call this
- * and only one will ever take effect.
+ * Return a booking's seats to the vehicle — the one and only way a seat ever
+ * comes back.
+ *
+ * Three things happen in one commit: `seatReleasedAt` is stamped (the guard),
+ * the driver's seat count is incremented atomically, and the reason/actor is
+ * recorded. Because the flag and the increment share the commit, and the flag
+ * is written with a compare-and-swap on the booking, a retry, a webhook, the
+ * reaper and a double tap can all call this and exactly one will take effect.
+ *
+ * Returns true only when this call was the one that released the seats.
  */
-export async function releaseSeatsOnce(bookingId: string): Promise<boolean> {
+export async function releaseSeatsOnce(
+  bookingId: string,
+  options: { actorId?: string; actorRole?: string; reason?: string } = {}
+): Promise<boolean> {
   return withRetry(async () => {
     const booking = await getDocument(`bookings/${bookingId}`);
     if (!booking) return false;
@@ -226,14 +235,33 @@ export async function releaseSeatsOnce(bookingId: string): Promise<boolean> {
     const seats = Number(booking.data.seats || 0);
     const driverId = booking.data.driverId as string;
 
+    // Seats only go back on offer for a vehicle that is actually working. An
+    // offline driver advertises nothing — going offline zeroes the counter — so
+    // incrementing it would leave a trotro that is not on the road looking as
+    // though it still has seats to sell. The release itself always happens.
+    const driver = driverId && seats > 0 ? await getDocument(`drivers/${driverId}`) : null;
+    const backOnOffer = driver !== null && driver.data.online === true;
+
     await commit([
       updateWrite(
         `bookings/${bookingId}`,
-        { seatReleasedAt: nowIso(), updatedAt: nowIso() },
-        ["seatReleasedAt", "updatedAt"],
+        {
+          seatReleasedAt: nowIso(),
+          seatReleasedBy: options.actorId ?? null,
+          seatReleasedByRole: options.actorRole ?? null,
+          seatReleaseReason: options.reason ?? "cancelled",
+          updatedAt: nowIso(),
+        },
+        [
+          "seatReleasedAt",
+          "seatReleasedBy",
+          "seatReleasedByRole",
+          "seatReleaseReason",
+          "updatedAt",
+        ],
         booking.updateTime
       ),
-      ...(driverId && seats > 0
+      ...(backOnOffer && driverId && seats > 0
         ? [incrementWrite(`drivers/${driverId}`, { availableSeats: seats })]
         : []),
     ]);
@@ -419,12 +447,23 @@ export async function markPickedUp(bookingId: string, actorUid: string): Promise
         {
           status: "picked_up",
           pickedUpAt: nowIso(),
+          pickedUpBy: actor.actorId,
+          pickedUpByRole: actor.actorRole,
           lastActionBy: actor.actorId,
           lastActionByRole: actor.actorRole,
           lastActionAt: nowIso(),
           updatedAt: nowIso(),
         },
-        ["status", "pickedUpAt", "lastActionBy", "lastActionByRole", "lastActionAt", "updatedAt"],
+        [
+          "status",
+          "pickedUpAt",
+          "pickedUpBy",
+          "pickedUpByRole",
+          "lastActionBy",
+          "lastActionByRole",
+          "lastActionAt",
+          "updatedAt",
+        ],
         fresh.updateTime
       ),
     ]);
@@ -447,7 +486,21 @@ export async function markPickedUp(bookingId: string, actorUid: string): Promise
 export async function completeBooking(bookingId: string, actorUid: string): Promise<void> {
   const booking = await getBookingOrThrow(bookingId);
   const actor = await resolveBookingActor(booking, actorUid, "complete");
-  if (booking.data.status !== "picked_up" && booking.data.status !== "confirmed") {
+  const status = String(booking.data.status);
+
+  // Already off the vehicle (a double tap, a retry, or two devices): make sure
+  // the seats came back and stop. `releaseSeatsOnce` is a no-op when they did,
+  // which is what makes this self-healing rather than duplicating seats.
+  if (status === "completed" || status === "cancelled" || status === "expired") {
+    await releaseSeatsOnce(bookingId, {
+      actorId: actor.actorId,
+      actorRole: actor.actorRole,
+      reason: "dropped_off",
+    });
+    return;
+  }
+
+  if (status !== "picked_up" && status !== "confirmed") {
     throw new ApiError("booking_wrong_state", "This booking can't be completed.", 409);
   }
 
@@ -460,16 +513,49 @@ export async function completeBooking(bookingId: string, actorUid: string): Prom
         {
           status: "completed",
           completedAt: nowIso(),
+          droppedOffBy: actor.actorId,
+          droppedOffByRole: actor.actorRole,
           lastActionBy: actor.actorId,
           lastActionByRole: actor.actorRole,
           lastActionAt: nowIso(),
           updatedAt: nowIso(),
         },
-        ["status", "completedAt", "lastActionBy", "lastActionByRole", "lastActionAt", "updatedAt"],
+        [
+          "status",
+          "completedAt",
+          "droppedOffBy",
+          "droppedOffByRole",
+          "lastActionBy",
+          "lastActionByRole",
+          "lastActionAt",
+          "updatedAt",
+        ],
         fresh.updateTime
       ),
     ]);
   });
+
+  // Phase 4: the passenger is off, so their seats go back on offer for whoever
+  // is waiting further along the route. Exactly once, through the same guard
+  // every other release uses.
+  const seats = Number(booking.data.seats || 0);
+  const driverId = String(booking.data.driverId || "");
+  const released = await releaseSeatsOnce(bookingId, {
+    actorId: actor.actorId,
+    actorRole: actor.actorRole,
+    reason: "dropped_off",
+  });
+
+  if (released && driverId && seats > 0) {
+    const usage = await readSeatUsage(driverId);
+    await auditSeatsReleased({
+      booking,
+      seats,
+      actor,
+      reason: "dropped_off",
+      usage,
+    });
+  }
 
   await writeAudit({
     event: "BOOKING_COMPLETED",

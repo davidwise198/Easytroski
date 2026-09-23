@@ -24,6 +24,7 @@ import { expireStaleHolds, getActiveTripForDriver } from "./bookings.ts";
 import { cancelBookingForSystem } from "./cancelFlow.ts";
 import { makeEarningAvailable } from "./wallet.ts";
 import { clearMateOnTripEnd, ensureDriverCode } from "./mates.ts";
+import { writeSeatsOffered } from "./seats.ts";
 
 const LIVE_BOOKING_STATUSES = ["pending", "awaiting_payment", "confirmed", "picked_up"];
 
@@ -103,27 +104,33 @@ export async function startTripCore(input: {
   return { tripId, availableSeats: capacity };
 }
 
-/** Driver changes how many seats they are offering (backend-owned field). */
+/**
+ * Driver changes how many seats they are offering (backend-owned field).
+ *
+ * Goes through the seat authority rather than writing the counter straight out.
+ * A seat already held or paid for is not available to offer again, so a driver
+ * who set the counter directly could advertise more seats than the vehicle has
+ * once bookings existed — the same invariant the Mate is held to.
+ */
 export async function setDriverCapacityCore(driverId: string, seats: number): Promise<{ availableSeats: number }> {
   const driver = await getDocument(`drivers/${driverId}`);
   if (!driver) throw new ApiError("driver_unavailable", "Your driver profile is missing.", 404);
 
   const capacity = Number(driver.data.vehicleCapacity || 0);
   const requested = Math.max(0, Math.round(seats));
-  if (capacity > 0 && requested > capacity + 0) {
+  if (capacity > 0 && requested > capacity) {
     throw new ApiError("invalid_request", `Your vehicle seats ${capacity}.`, 400);
   }
 
-  await commit([
-    updateWrite(
-      `drivers/${driverId}`,
-      { availableSeats: requested, updatedAt: nowIso() },
-      ["availableSeats", "updatedAt"],
-      driver.updateTime
-    ),
-  ]);
+  const trip = await getActiveTripForDriver(driverId);
+  const usage = await writeSeatsOffered(driverId, requested, {
+    actorId: driverId,
+    actorRole: "driver",
+    driverId,
+    tripId: trip?.id ?? null,
+  });
 
-  return { availableSeats: requested };
+  return { availableSeats: usage.offered };
 }
 
 /**
@@ -161,19 +168,6 @@ export async function endTripCore(
     await clearMateOnTripEnd(trip);
   }
 
-  // Offline with no seats on offer.
-  const fresh = await getDocument(`drivers/${driverId}`);
-  if (fresh) {
-    await commit([
-      updateWrite(
-        `drivers/${driverId}`,
-        { online: false, status: "offline", availableSeats: 0, updatedAt: nowIso() },
-        ["online", "status", "availableSeats", "updatedAt"],
-        fresh.updateTime
-      ),
-    ]);
-  }
-
   const bookings = await queryDocuments({
     collection: "bookings",
     filters: [{ field: "driverId", value: driverId }],
@@ -203,6 +197,21 @@ export async function endTripCore(
     if (booking.data.walletCreditedAt && !booking.data.earningsAvailableAt) {
       await makeEarningAvailable(booking);
     }
+  }
+
+  // Offline with no seats on offer — and deliberately last. Cancelling the
+  // bookings above hands their seats back, so zeroing the counter first would
+  // be undone by those releases and leave an offline driver advertising seats.
+  const fresh = await getDocument(`drivers/${driverId}`);
+  if (fresh) {
+    await commit([
+      updateWrite(
+        `drivers/${driverId}`,
+        { online: false, status: "offline", availableSeats: 0, updatedAt: nowIso() },
+        ["online", "status", "availableSeats", "updatedAt"],
+        fresh.updateTime
+      ),
+    ]);
   }
 
   await writeAudit({

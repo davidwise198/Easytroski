@@ -50,6 +50,8 @@ export type ApiErrorCode =
   | "mate_assigned_to_trip"
   | "trip_not_running"
   | "trip_has_passengers"
+  // ─── Seats on offer ────────────────────────────────────────────────────
+  | "seats_over_capacity"
   | "unknown";
 
 export class ApiError extends Error {

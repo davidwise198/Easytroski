@@ -132,11 +132,71 @@ Guards that deliberately say no:
   identity, passenger progress), the Mate's trip card completed (live trip
   status, booking progress), and the whole coordination matrix executed against
   a stubbed Firestore.
-- **Phase 4 — seats:** dropping a passenger off returns their seats to the trip
-  (reusing the existing release-once guard), mate seat adjustment within
-  vehicle capacity, mate notifications. Also still open: attribution wording in
-  the driver's booking history list, and a security review on a real device to
+- **Phase 4 — seats (done):** dropping a passenger off returns their seats to the
+  trip so they can be sold again further along the route, mate seat control
+  bounded by what is already held, one seat authority, and three real bugs the
+  seat tests exposed. See *Seats* below. Still open: attribution wording in the
+  driver's booking history list, and a security review on a real device to
   confirm the shipped rules match intent.
+
+## Seats (Phase 4)
+
+`supabase/functions/_shared/seats.ts` owns one counter and one invariant:
+
+```
+offered   = drivers/{id}.availableSeats        — what a new booking can take
+committed = Σ seats of live, unreleased bookings — held, paid or on board
+capacity  = drivers/{id}.vehicleCapacity
+
+INVARIANT:  offered + committed <= capacity, and neither is ever negative
+```
+
+A seat leaves `offered` in the same commit that creates the booking
+(compare-and-swap on the driver document, so two passengers can never take the
+same last seat) and comes back **exactly once, ever** through
+`releaseSeatsOnce()`, which stamps `seatReleasedAt` in the same commit as the
+increment. There is deliberately no second flag and no second increment path:
+rejection, hold expiry, payment expiry, passenger cancellation, driver
+cancellation, trip end, ghost-driver cleanup and now drop-off all reuse that one
+guard, so no path can return a seat twice or lose one.
+
+**Drop-off returns the seats.** `completeBooking` (the mate-only drop-off) now
+releases the booking's seats, recording `droppedOffBy` / `droppedOffByRole`
+beside `completedAt`. The booking is never deleted — passenger, seats, driver,
+mate, trip, pickup and getting-off points, both timestamps and the payment ride
+along with it — because releasing a seat is an accounting change, not an erasure
+of history. Getting off at an intermediate stop (Lapaz on an Omanjor → Accra run)
+releases those seats for someone boarding further along; nothing restricts a
+drop-off to the final destination.
+
+**Two bugs the seat tests found, both fixed here:**
+
+| Bug | Effect | Fix |
+| --- | --- | --- |
+| `endTripCore` zeroed the seat counter *before* cancelling the trip's bookings | each cancellation handed its seats back afterwards, so an offline driver ended up advertising seats | zero the counter last |
+| `releaseSeatsOnce` incremented the counter whatever the driver's state | any offline path (end trip, go offline, app killed) could leave seats advertised for a vehicle that was not on the road | only return seats to the counter when the driver is online; the release itself always happens |
+
+**Who may change the seats on offer.** `setSeatsOffered` resolves the caller
+against the live trip: the **mate working it**, or **its driver** (a vehicle with
+no mate must still be able to stop selling when it is full). This is *not* a
+booking decision, so the driver is allowed here — accepting, rejecting, pickup
+and drop-off remain mate-only. Every change is attributed
+(`SEATS_OFFERED_SET` with `actorRole`, plus `previousOffered`/`offered`) and
+refused with `seats_over_capacity` if it would offer a seat a passenger already
+holds. The driver's own `setDriverCapacity` goes through the same authority, so
+neither of them can overbook a vehicle.
+
+The seat tests live in `supabase/tests/seats.check.ts` — deliberately outside
+`supabase/functions/`, so the harness is never uploaded as a function asset:
+
+```bash
+deno run --allow-env --allow-net=127.0.0.1 supabase/tests/seats.check.ts
+```
+
+They run the real backend code over an in-memory Firestore that speaks the REST
+protocol — queries, update masks, creates, deletes, increments and, critically,
+`currentDocument` preconditions — which is what makes the "two passengers, one
+last seat" case a genuine race rather than an assertion about one. 85 checks.
 
 ## Booking read visibility (shipped in Phase 1)
 
@@ -208,10 +268,12 @@ of who worked it.
 * No in-app notification inbox exists for any role; the backend writes
   `notifications/{id}` but nothing reads it, so a new request reaches the mate
   through the live listener on their Passengers screen rather than a push.
-* Seats are not returned on drop-off yet (Phase 4), so a mate cannot yet resell
-  a seat freed mid-route.
-* A mate cannot adjust the seat count on offer yet (Phase 4) — the screens show
-  capacity, confirmed, held and available seats, all read from the backend.
 * With no Mate assigned, a driver can start a trip and take requests, but nobody
   can answer them — requests expire after the seat-hold window. That is the
   intended pressure to assign a Mate before driving.
+* A vehicle's `vehicleCapacity` is still declared by the driver at onboarding,
+  so it is the driver's own claim about their trotro. `availableSeats` is
+  backend-only, but capacity itself is not independently verified.
+* Nothing records *where along the route* a seat was freed, so reselling is
+  first-come-first-served rather than restricted to passengers boarding after
+  the drop-off point.
