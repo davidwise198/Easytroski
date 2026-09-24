@@ -129,7 +129,7 @@ export async function notifyPassengerOfConfirmation(
   );
 }
 
-/** Notify the passenger when the driver rejects. */
+/** Notify the passenger when the Mate declines the request. */
 export async function notifyPassengerOfRejection(
   passengerId: string,
   routeLabel: string
@@ -137,7 +137,7 @@ export async function notifyPassengerOfRejection(
   await notifyUser(
     passengerId,
     "Booking declined",
-    `Your booking on ${routeLabel} was declined by the driver.`,
+    `Your booking on ${routeLabel} was declined by your Mate.`,
     { type: "booking_rejected" }
   );
 }

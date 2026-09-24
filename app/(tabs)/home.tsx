@@ -75,7 +75,7 @@ function bookingStatusLabel(status: BookingStatus): string {
     case "pending":
       return "Waiting for your Mate to accept";
     case "awaiting_payment":
-      return "Driver accepted — payment needed";
+      return "Mate accepted — payment needed";
     case "confirmed":
       return "Booking confirmed — en route";
     case "picked_up":
@@ -193,7 +193,7 @@ export default function HomeScreen() {
   const awaitingPayment = activeBooking?.status === "awaiting_payment";
   const contextText = activeBooking
     ? awaitingPayment
-      ? `Driver accepted. Pay ${formatPesewas(activeBooking.totalPesewas)} to secure your ${activeBooking.seats} seat${activeBooking.seats > 1 ? "s" : ""}.`
+      ? `Mate accepted. Pay ${formatPesewas(activeBooking.totalPesewas)} to secure your ${activeBooking.seats} seat${activeBooking.seats > 1 ? "s" : ""}.`
       : `You have ${activeBooking.seats} seat${activeBooking.seats > 1 ? "s" : ""} on this trip.`
     : bookings.length > 0
       ? "View your trip history anytime."
